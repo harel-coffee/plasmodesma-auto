@@ -24,6 +24,7 @@ metabolomics, identification of active compounds in natural extracts, characteri
 Such studies require the acquisition of many diverse NMR measurements on series of samples.
 
 The Plasmodesma program allows the autonomous, unsupervised processing of a large corpus of 1D, 2D and DOSY experiments from a series of samples acquired in different conditions.
+The program relies on the SPIKE library ( https://bitbucket.org/delsuc/spike ) for processing and analysis.
 It concentrate on the detection and identification step of unknown compounds, as is usually required in the identification of an active molecule in a natural extracts starts with its detection and then its characterization of an unknown compond or eventually a family of related species.
 
 It provides all the signal processing steps, as well as peak-picking and bucketing of 1D and 2D spectra.
@@ -34,3 +35,21 @@ Plasmodesma is a novel tool which should be useful to decipher complex mixtures,
 
 ## Files
 The project contains several files
+
+The project contains several files
+
+**Plasmodesma.py** The program itself.
+
+run it with
+```
+python Plasmodesma.py -d folder_containing_all_data_Sets
+```
+
+**BucketUtilities.py**  a set of utilities used for the analysis step
+
+**Analysis.ipynb** an example of analysis of a set of experiments. Detection of varying amount of artemisin in a plant extract is used as an example
+
+**spike_plugins** plugins for SPIKE library
+
+
+
