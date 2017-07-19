@@ -51,5 +51,8 @@ python Plasmodesma.py -d folder_containing_all_data_Sets
 
 **spike_plugins** plugins for SPIKE library
 
-
+## DATA
+The data presented in the publication, and used in the Analysis.ipynb file are not in this repository for the moment.
+They can be downloaded from our laboratory web site, at the following address :
+https://pydio.igbmc.fr/pydio/public/8b07c3c6a58c381
 
