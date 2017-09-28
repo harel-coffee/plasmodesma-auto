@@ -49,12 +49,12 @@ python Plasmodesma.py -d folder_containing_all_data_Sets
 **spike_plugins** plugins for SPIKE library
 
 ## Analysis examples
-- **Analysis.ipynb**  Detection of varying amount of artemisin spiked in a plant extract.
+- **Analysis.ipynb** the *ARTE* sample: Detection of varying amount of artemisin spiked in a plant extract.
 	- 5 fractions were separated from the extract and spiked with various amount of artemisinine
 	- artemisinine signals are detected in 2D COSY pairs of spectra by bucket comparison
 	- linear regression on spiked concentration shows the quality of the analysis obtained on COSY, HSQC and HMBC experiments.
 
-- **Analysis2.ipynb** The same plant extract with artemisinine added before fractionation
+- **Analysis2.ipynb** the *SMARTE* sample: The same plant extract with artemisinine added before fractionation, and the biological activity of each sample was measured.
 	- linear regression on activity obtained on DOSY, HSQC and combining DOSY and HSQC.
 
 
