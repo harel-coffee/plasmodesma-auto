@@ -16,6 +16,7 @@ and Marc-André Delsuc*
 *to be submitted*
 
 ----
+
 ## Abstract
 
 Liquid state NMR is commonly used for the analysis of mixtures containing unknown molecules,
@@ -36,8 +37,6 @@ Plasmodesma is a novel tool which should be useful to decipher complex mixtures,
 ## Files
 The project contains several files
 
-The project contains several files
-
 **Plasmodesma.py** The program itself.
 
 run it with
@@ -47,12 +46,29 @@ python Plasmodesma.py -d folder_containing_all_data_Sets
 
 **BucketUtilities.py**  a set of utilities used for the analysis step
 
-**Analysis.ipynb** an example of analysis of a set of experiments. Detection of varying amount of artemisin in a plant extract is used as an example
-
 **spike_plugins** plugins for SPIKE library
+
+## Analysis examples
+- **Analysis.ipynb**  Detection of varying amount of artemisin spiked in a plant extract.
+	- 5 fractions were separated from the extract and spiked with various amount of artemisinine
+	- artemisinine signals are detected in 2D COSY pairs of spectra by bucket comparison
+	- linear regression on spiked concentration shows the quality of the analysis obtained on COSY, HSQC and HMBC experiments.
+
+- **Analysis2.ipynb** The same plant extract with artemisinine added before fractionation
+	- linear regression on activity obtained on DOSY, HSQC and combining DOSY and HSQC.
+
 
 ## DATA
 The data presented in the publication, and used in the Analysis.ipynb file are not in this repository for the moment.
 They can be downloaded from our laboratory web site, at the following address :
 https://pydio.igbmc.fr/pydio/public/8b07c3c6a58c381
 
+
+---
+*This Program is provided under the [http://www.cecill.info/licences.en.html](Licence CeCILL 2.1)* 
+
+*This program HAS NOT been tested intensively, it is believed to do what it is supposed to do, However, you are welcome to check it on your own data.*
+
+    Authors : Petar Markov, Laure Margueritte, Marc-André Delsuc (madelsuc@unistra.fr)
+    Version : 1.0   Date : June 2017
+    Version : 1.1   Date : September 2017
