@@ -13,7 +13,7 @@ Catherine Vonthron-Sénécheau,
 Mélanie Bourjot,
 and Marc-André Delsuc*
 
-*to be submitted*
+*in revision*
 
 ----
 
@@ -43,6 +43,12 @@ run it with
 ```
 python Plasmodesma.py -d folder_containing_all_data_Sets
 ```
+or
+```
+python Plasmodesma.py -d folder_containing_all_data_Sets -n 4
+```
+if you want to parrallelized on 4 processors
+
 
 **BucketUtilities.py**  a set of utilities used for the analysis step
 
@@ -70,5 +76,5 @@ https://pydio.igbmc.fr/pydio/public/8b07c3c6a58c381
 *This program HAS NOT been tested intensively, it is believed to do what it is supposed to do, However, you are welcome to check it on your own data.*
 
     Authors : Petar Markov, Laure Margueritte, Marc-André Delsuc (madelsuc@unistra.fr)
-    Version : 1.0   Date : June 2017
-    Version : 1.1   Date : September 2017
+    Version : 1.0   Date : June 2017 (corresponding to Plasmodesma_v6_2)
+    Version : 1.1   Date : September 2017  (corresponding to Plasmodesma_v6_3)
