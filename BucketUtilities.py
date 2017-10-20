@@ -80,8 +80,8 @@ def affiche(X, Y, Z, scale=1.0, ax=None, cmap=None, figsize=(8, 7), reverse=True
     m1 = Z.max()
     level = [m1*(i/100.0)/scale for i in levelbase ]
     ax.contour(X, Y, Z, level, cmap= cmap)
-    ax.set_xlabel('centerF1 (ppm)')
-    ax.set_ylabel('centerF2 (ppm)')
+    ax.set_xlabel('F2 bucket center (ppm)')
+    ax.set_ylabel('F1 bucket center (ppm)')
     if reverse:
         ax.invert_xaxis()
         ax.invert_yaxis()
