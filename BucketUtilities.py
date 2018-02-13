@@ -10,7 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
-NETMODE = 'standard' # standard / mieux / encore
+NETMODE = 'standard' # cru / standard / mieux / encore
 def loadInt2D(epath, net=False, sym=False):
     """loads intensities from a csv bucket-list file from 2D spectra
     net: determines whether the cleaning method is used
@@ -35,7 +35,7 @@ def loadInt2D(epath, net=False, sym=False):
             Zr1 = nettoie_mieux(Zr1)
         elif netmode=='encore':
             Zr1 = nettoie_encore_mieux(Zr1)
-        else:
+        elif netmode != 'cru':
             raise Exception(netmode + ' : Wrong netmode !')
     if sym:
             Zr1 = symetrise(Zr1)
@@ -65,7 +65,7 @@ def loadStd2D(epath, net=False, sym=False):
             Zr1 = nettoie_mieux(Zr1)
         elif netmode=='encore':
             Zr1 = nettoie_encore_mieux(Zr1)
-        else:
+        elif netmode != 'cru':
             raise Exception(netmode + ' : Wrong netmode !')
     if sym:
         Zr1 = symetrise(Zr1)

@@ -115,7 +115,7 @@ def bucket2d(data, zoom=((0.5, 9.5),(0.5, 9.5)), bsize=(0.1, 0.1), file=None):
     here1 = min(start1, end1)
     here1_2 = (here1-bsize1/2)
     there1 = max(start1, end1)
-    F = open('toto.txt','w')
+#    F = open('toto.txt','w')
     while (here1_2 < there1):
         ih1 = int(round(dcopy.axis1.ptoi(here1_2)))
         next1 = (here1_2+bsize1)
@@ -141,7 +141,7 @@ def bucket2d(data, zoom=((0.5, 9.5),(0.5, 9.5)), bsize=(0.1, 0.1), file=None):
                 minv = np.NaN     # sum and std returns nan - max returns an error ???
             stdv = dcopy.buffer[inext1:ih1, inext2:ih2].std()
             print("%.3f, %.3f, %.1f, %.1f, %.1f, %.1f, %d, %d"%(here1, here2, integ/area, maxv, minv, stdv, (ih1-inext1), (ih2-inext2) ), file=file)
-            print(here1, here2, here1_2, here2_2, inext1, ih1, inext2, ih2, file=F)
+#            print(here1, here2, here1_2, here2_2, inext1, ih1, inext2, ih2, file=F)
             here2_2 = next2
             here2 = (here2+bsize2)
         here1_2 = next1
