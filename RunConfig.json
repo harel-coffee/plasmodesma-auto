@@ -1,0 +1,14 @@
+{
+"NPROC": 8,
+"BC_ITER": 5,
+"TMS": "True",
+"SANERANK": 20,
+"DOSY_LAZY": "True",
+"PALMA_ITER": 20000,
+"BCK_1H_1D": 0.03,
+"BCK_1H_2D": 0.04,
+"BCK_13C_1D": 0.04,
+"BCK_13C_2D": 2.0,
+"BCK_DOSY": 2.0,
+"BCK_PP": "True"
+}
