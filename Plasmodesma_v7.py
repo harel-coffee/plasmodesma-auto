@@ -274,7 +274,7 @@ def process_1D(xarg):
 
     bkout = open( op.join(resdir, '1D', fidname+'_bucketlist.csv')  , 'w')
     #d.bucket1d(file=bkout)
-    d.bucket1d(file=bkout, bsize=Config['BCK_1H_1D'], pp=Config['BCK_PP'])
+    d.bucket1d(file=bkout, zoom=Config['BCK_1H_LIMITS'], bsize=Config['BCK_1H_1D'], pp=Config['BCK_PP'])
     bkout.close()
     d.save(op.join( fiddir,"processed.gs1") )
     return d
