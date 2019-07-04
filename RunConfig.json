@@ -1,14 +1,16 @@
 {
-"NPROC": 8,
+"NPROC": 2,
 "BC_ITER": 5,
-"TMS": "True",
+"TMS": false,
+"LB_1H": 10.0,
 "SANERANK": 20,
-"DOSY_LAZY": "True",
+"DOSY_LAZY": true,
 "PALMA_ITER": 20000,
 "BCK_1H_1D": 0.03,
+"BCK_1H_LIMITS": [0.5, 9.5],
 "BCK_1H_2D": 0.04,
 "BCK_13C_1D": 0.04,
-"BCK_13C_2D": 2.0,
+"BCK_13C_2D": 1.0,
 "BCK_DOSY": 2.0,
-"BCK_PP": "True"
+"BCK_PP": true
 }

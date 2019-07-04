@@ -44,6 +44,7 @@ import sys
 from glob import glob
 import os.path as op
 import os,json
+import pprint
 import tempfile
 import zipfile as zip
 import datetime
@@ -92,23 +93,29 @@ import Bruker_Report
 #---------------------------------------------------------------------------
 #2. Parameters
 # These can be changed to tune the program behavior
-NPROC = 2       # The default number of processors for calculation, if  value >1 will activate multiprocessing mode
-BC_ITER = 5     # Used for baselineC orrection; It is advisable to use a larger number for iterating, e.g. 5
-TMS = True      # if true, TMS (or any 0 ppm reference) is supposed to be present and used for ppm calibration
-SANERANK = 20   # used for denoising of 2D experiments, typically 10-50; setting to 0 deactivates denoising
-DOSY_LAZY = False    # if True, will not reprocess DOSY experiment if an already processed file is on the disk
-PALMA_ITER = 20000  # used for processing of DOSY
-BCK_1H_1D = 0.01    # bucket size for 1D 1H
-BCK_1H_2D = 0.03    # bucket size for 2D 1H
-BCK_13C_1D = 0.03   # bucket size for 1D 13C
-BCK_13C_2D = 1.0    # bucket size for 2D 13C
-BCK_DOSY = 1.0      # bucket size for vertical axis of DOSY experiments
-BCK_PP = True       #Number of peaks per bucket
+global Config
+Config = {
+    'NPROC' : 2,       # The default number of processors for calculation, if  value >1 will activate multiprocessing mode
+    'BC_ITER' : 5,     # Used for baselineC orrection; It is advisable to use a larger number for iterating, e.g. 5
+    'TMS' : True,      # if true, TMS (or any 0 ppm reference) is supposed to be present and used for ppm calibration
+    'LB_1H' : 1.0,     # exponential linebroadening in Hz used for 1D 1H 
+    'LB_13C' : 3.0,    # exponential linebroadening in Hz used for 1D 13C
+    'SANERANK' : 20,   # used for denoising of 2D experiments, typically 10-50; setting to 0 deactivates denoising
+    'DOSY_LAZY' : False,    # if True, will not reprocess DOSY experiment if an already processed file is on the disk
+    'PALMA_ITER' : 20000,  # used for processing of DOSY
+    'BCK_1H_1D' : 0.01,    # bucket size for 1D 1H
+    'BCK_1H_2D' : 0.03,    # bucket size for 2D 1H
+    'BCK_1H_LIMITS' : [0.5, 9.5],   # limits of zone to  bucket and display in 1H
+    'BCK_13C_LIMITS' : [-10, 150],  # limits of zone to  bucket and display in 13C
+    'BCK_13C_1D' : 0.03,   # bucket size for 1D 13C
+    'BCK_13C_2D' : 1.0,    # bucket size for 2D 13C
+    'BCK_DOSY' : 1.0,      # bucket size for vertical axis of DOSY experiments
+    'BCK_PP' : True       #Number of peaks per bucket
+}
 
 def set_param():
     "prgm parameters"
     print("current directory: ", os.path.realpath(os.getcwd()))
-    global BC_ITER,TMS,SANERANK,DOSY_LAZY,NPROC,PALMA_ITER,BCK_1H_1D,BCK_1H_2D,BCK_13C_1D,BCK_13C_2D,BCK_DOSY,BCK_PP
     try:
         with open("RunConfig.json","r") as f:
             config = json.load(f)
@@ -118,19 +125,11 @@ def set_param():
 #        print('*** WARNING - error reading config.json file - using default configuration')
     else:  # if no error
         for k in config.keys():
-            if k == 'BC_ITER': BC_ITER = config[k]
-            elif k == 'TMS': TMS = config[k]
-            elif k == 'SANERANK': SANERANK = config[k]
-            elif k == 'DOSY_LAZY': DOSY_LAZY = config[k]
-            elif k == 'NPROC': NPROC = config[k]
-            elif k == 'PALMA_ITER': PALMA_ITER = config[k]
-            elif k == 'BCK_1H_1D': BCK_1H_1D = config[k]
-            elif k == 'BCK_1H_2D': BCK_1H_2D = config[k]
-            elif k == 'BCK_13C_1D': BCK_13C_1D = config[k]
-            elif k == 'BCK_13C_2D': BCK_13C_2D = config[k]
-            elif k == 'BCK_DOSY': BCK_DOSY = config[k]
-            elif k == 'BCK_PP': BCK_PP = config[k]
-    print('configuration:\n',config)
+            if k in Config.keys():
+                Config[k] = config[k]
+            else:
+                print ("*** %s entry in RunConfig.json  is ignored - wrong entry"%k)
+    #print('configuration:\n',Config)
 
 #---------------------------------------------------------------------------
 #3. Utilities
@@ -168,7 +167,7 @@ def FT1D(numb1, ppm_offset=0, autoph=True, ph0=0, ph1=0):
 
     proc = bk.read_param(numb1[:-3]+'pdata/1/procs')
     d = bk.Import_1D(numb1)
-    d.apod_em(1,1).zf(2).ft_sim()
+    d.apod_em(Config['LB_1H'],1).zf(2).ft_sim()
     if not autoph:
         p0,p1 = phase_from_param()
         d.phase( p0+ph0, p1+ph1 )   # Performs the stored phase correction
@@ -179,7 +178,7 @@ def FT1D(numb1, ppm_offset=0, autoph=True, ph0=0, ph1=0):
 
     spec = np.real( as_cpx(d.buffer) )
     # the following is a bit convoluted baseline correction, 
-    bl = correctbaseline(spec, iterations=BC_ITER, nbchunks=d.size1//1000)
+    bl = correctbaseline(spec, iterations=Config['BC_ITER'], nbchunks=d.size1//1000)
     dd = d.copy()
     dd.set_buffer(bl)
     dd.unit = 'ppm'
@@ -262,7 +261,7 @@ def process_1D(xarg):
     ppm_offset, ph0, ph1 = get_config(base, manip, fidname)
 
     d = FT1D(exp, ppm_offset=ppm_offset, ph0=ph0, ph1=ph1)
-    if TMS:
+    if Config['TMS']:
         d = autozero(d)
 
     noise = findnoiselevel( d.get_buffer() )
@@ -275,7 +274,7 @@ def process_1D(xarg):
 
     bkout = open( op.join(resdir, '1D', fidname+'_bucketlist.csv')  , 'w')
     #d.bucket1d(file=bkout)
-    d.bucket1d(file=bkout, bsize=BCK_1H_1D, pp=BCK_PP)
+    d.bucket1d(file=bkout, bsize=Config['BCK_1H_1D'], pp=Config['BCK_PP'])
     bkout.close()
     d.save(op.join( fiddir,"processed.gs1") )
     return d
@@ -306,7 +305,7 @@ def process_2D(xarg):
     d = bk.Import_2D(numb2)
     d.unit = 'ppm'
     scale = 10.0 
-    sanerank = SANERANK
+    sanerank = Config['SANERANK']
 
     #1. If TOCSY  
     if 'dipsi' in exptype:
@@ -324,7 +323,7 @@ def process_2D(xarg):
             d.apod_sin(maxi=0.5, axis=1).zf(zf1=4).ft_n_p().modulus().rem_ridge()
         scale = 50.0
         d.axis2.offset += ppm_offset*d.axis2.frequency
-        if TMS:
+        if Config['TMS']:
             d = autozero(d)
 
     #2. If COSY DQF
@@ -336,7 +335,7 @@ def process_2D(xarg):
         d.apod_sin(maxi=0.5, axis=1).zf(zf1=4).ft_sh_tppi().modulus().rem_ridge()
         scale = 20.0
         d.axis2.offset += ppm_offset*d.axis2.frequency
-        if TMS:
+        if Config['TMS']:
             d = autozero(d)
     #3. If HSQC
     elif 'hsqc' in exptype:
@@ -349,7 +348,7 @@ def process_2D(xarg):
         d.apod_sin(maxi=0.5, axis=1).zf(zf1=4).ft_sh().modulus().rem_ridge()
         scale = 10.0
         d.axis2.offset += ppm_offset*d.axis2.frequency
-        if TMS:
+        if Config['TMS']:
             d = autozero(d, z1=(5,-5))
 
     #4. If HMBC
@@ -365,13 +364,13 @@ def process_2D(xarg):
         d.apod_sin(maxi=0.5, axis=1).zf(zf1=4).bk_ftF1().modulus().rem_ridge() # For Pharma MB1-X-X series
         scale = 10.0
         d.axis2.offset += ppm_offset*d.axis2.frequency
-        if TMS:
+        if Config['TMS']:
             d = autozero(d, z1=(5,-5))
 
     #5. If DOSY - Processed in process_DOSY
     elif 'ste' in exptype or 'led' in exptype:
         print ("DOSY")
-        d = process_DOSY(numb2, ppm_offset, lazy=DOSY_LAZY)
+        d = process_DOSY(numb2, ppm_offset, lazy=Config['DOSY_LAZY'])
         scale = 50.0
 
     analyze_2D( d, name=op.join(resdir, '2D', exptype+'_'+fidname) )
@@ -392,7 +391,7 @@ def Dprocess_2D( numb2, resdir ):
     d.unit = 'ppm'
     if 'ste' in exptype or 'led' in exptype:
         print ("DOSY")
-        d = process_DOSY(numb2, ppm_offset, lazy=DOSY_LAZY)
+        d = process_DOSY(numb2, ppm_offset, lazy=Config['DOSY_LAZY'])
         scale = 50.0
     else:
         raise Exception("This is not a DOSY: " + numb2)
@@ -432,7 +431,7 @@ def process_DOSY(fid, ppm_offset, lazy=False):
         dd.adapt_size()
     else:
         d.chsize(sz2=min(16*1024,d.axis2.size))
-        d.apod_em(1,axis=2).ft_sim().bruker_corr()
+        d.apod_em(Config['LB_1H'],axis=2).ft_sim().bruker_corr()
         # automatic phase correction
         r = d.row(2)
         r.apmin()
@@ -446,8 +445,8 @@ def process_DOSY(fid, ppm_offset, lazy=False):
         NN = 256
         d.prepare_palma(NN, 10.0, 10000.0)
         mppool = POOL
-        dd = d.do_palma(miniSNR=20, nbiter=PALMA_ITER, lamda=0.05, mppool=mppool )
-        if TMS:
+        dd = d.do_palma(miniSNR=20, nbiter=Config['PALMA_ITER'], lamda=0.05, mppool=mppool )
+        if Config['TMS']:
             r = autozero(r)  # calibrate only F2 axis !
             dd.axis2.offset = r.axis1.offset
     dd.axis2.currentunit = 'ppm'
@@ -476,17 +475,23 @@ def analyze_2D(d, name, pplevel=10):
     dd.report_peaks(file=pkout)
     pkout.close() 
     bkout = open( name+'_bucketlist.csv'  , 'w')
+    BCK_1H_2D = Config['BCK_1H_2D']
+    BCK_13C_2D = Config['BCK_13C_2D']
+    BCK_1H_LIMITS = Config['BCK_1H_LIMITS']
+    BCK_13C_LIMITS = Config['BCK_13C_LIMITS']
+    BCK_DOSY =  Config['BCK_DOSY']
+    BCK_PP = Config['BCK_PP']
     if name.find('cosy') != -1 or name.find('dipsi') != -1:
-        dd.bucket2d(file=bkout, zoom=( (0.5, 9.5) , (0.5, 9.5)), bsize=(BCK_1H_2D, BCK_1H_2D),pp=BCK_PP )
+        dd.bucket2d(file=bkout, zoom=(BCK_1H_LIMITS, BCK_1H_LIMITS), bsize=(BCK_1H_2D, BCK_1H_2D),pp=BCK_PP )
     elif name.find('hsqc') != -1 or name.find('hmbc') != -1:
-        dd.bucket2d(file=bkout, zoom=( (-10,150) , (0.5, 9.5)), bsize=(BCK_13C_2D, BCK_1H_2D),pp=BCK_PP )
+        dd.bucket2d(file=bkout, zoom=( BCK_13C_LIMITS, BCK_1H_LIMITS), bsize=(BCK_13C_2D, BCK_1H_2D),pp=BCK_PP )
     elif name.find('ste') != -1 or name.find('led') != -1:
         ldmin = np.log10(d.axis1.dmin)
         ldmax = np.log10(d.axis1.dmax)
         sw = ldmax-ldmin
         dd.buffer[:,:] = dd.buffer[::-1,:]  # return axis1 
         dd.axis1 = NMRAxis(specwidth=100*sw, offset=100*ldmin, frequency = 100.0, itype = 0)     # faking a 100MHz where ppm == log(D)
-        dd.bucket2d(file=bkout, zoom=( (ldmin, ldmax) , (0.5, 9.5)), bsize=(BCK_DOSY, BCK_1H_2D),pp=BCK_PP ) #original parameters
+        dd.bucket2d(file=bkout, zoom=( (ldmin, ldmax) , BCK_1H_LIMITS), bsize=(BCK_DOSY, BCK_1H_2D),pp=BCK_PP ) #original parameters
     else:
         print ("*** Name not found!")
     bkout.close()
@@ -586,10 +591,12 @@ def main(DIREC, Nproc):
         if not op.isdir(sp):
             # print("alien files")
             continue
-        if sp == 'Results': # leftovers...
+        if op.basename(sp) == 'Results': # leftovers...
             print("Results from a previous run is present, stopping...")
             break
-        # ok, continue
+        if  op.basename(sp)  == '__pycache__':  # python internal
+            continue
+        # ok, go on
         resdir = op.join( DIREC, 'Results', op.basename(sp) )
         mkdir(resdir)
         for folder in ['1D', '2D']:
@@ -606,12 +613,11 @@ def main(DIREC, Nproc):
 if __name__ == "__main__":
     import argparse
     set_param()
-    print("params are:", "BC_ITER: ",BC_ITER,"TMS: ",TMS,"SANERANK: ",SANERANK,"DOSY_LAZY: ",DOSY_LAZY,"NPROC: ",NPROC,
-        "PALMA_ITER: ", PALMA_ITER,"BCK_1H_1D: ",BCK_1H_1D,"BCK_1H_2D: ", BCK_1H_2D,"BCK_13C_1D: ",BCK_13C_1D,"BCK_13C_2D: ",BCK_13C_2D,
-        "BCK_DOSY: ",BCK_DOSY)
+    print("params are:")
+    pprint.pprint(Config)
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('-d', action='store', dest='DIREC', default=" .", help='DIRECTORY_with_NMR_experiments, default=.')
-    parser.add_argument('-n', action='store', dest='Nproc', default=NPROC, type=int, help='number of processors to use, default=%d'%NPROC)
+    parser.add_argument('-n', action='store', dest='Nproc', default=Config['NPROC'], type=int, help='number of processors to use, default=%d'%Config['NPROC'])
     args = parser.parse_args()
 
     print ("Processing ...")        
