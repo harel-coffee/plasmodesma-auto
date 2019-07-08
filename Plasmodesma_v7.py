@@ -38,9 +38,6 @@ from __future__ import print_function, division
 #---------------------------------------------------------------------------
 #1. Imports; From global to specific modules in descending order
 import sys
-# set below the path to SPIKE, or let-it commented if spike is already available
-# sys.path.append('/Users/me/SPIKE') # Path to the directory where SPIKE can be found
-
 from glob import glob
 import os.path as op
 import os,json
@@ -93,6 +90,8 @@ import Bruker_Report
 #---------------------------------------------------------------------------
 #2. Parameters
 # These can be changed to tune the program behavior
+# These are default behaviours
+# these values will be overloaded with the content of the RunConfig.json file if present
 global Config
 Config = {
     'NPROC' : 2,       # The default number of processors for calculation, if  value >1 will activate multiprocessing mode
@@ -115,14 +114,13 @@ Config = {
 
 def set_param():
     "prgm parameters"
+    global Config
     print("current directory: ", os.path.realpath(os.getcwd()))
     try:
         with open("RunConfig.json","r") as f:
             config = json.load(f)
     except IOError:
         print('*** WARNING - no RunConfig.json file - using default configuration')
-#    except:
-#        print('*** WARNING - error reading config.json file - using default configuration')
     else:  # if no error
         for k in config.keys():
             if k in Config.keys():
@@ -191,7 +189,7 @@ def autozero(d, z1=(0.1,-0.1), z2=(0.1,-0.1),):
     """
     This function search for a peak around 0ppm, assumed to be the reference compound (TMS)
     and assign it to exactly 0
-    z1 and z2 (not used in 2D) are the zoom window in which the peak is searched
+    z1 and z2 (z2 not used in 1D) are the zoom window in which the peak is searched
     """
     # peak pick TMS
     sc = 25                     # scaling for pp threshold
@@ -315,12 +313,12 @@ def process_2D(xarg):
             d.apod_sin(maxi=0.5, axis=2).zf(zf2=2).ft_sim()
             if sanerank != 0:
                 d.sane(rank=sanerank, axis=1)
-            d.apod_sin(maxi=0.5, axis=1).zf(zf1=4).ft_sh_tppi().modulus().rem_ridge()
+            d.apod_sin(maxi=0.5, axis=1).zf(zf1=4).bk_ftF1().modulus().rem_ridge()
         elif 'dipsi2etgpsi' in exptype:
             d.apod_sin(maxi=0.5, axis=2).zf(zf2=2).ft_sim()
             if sanerank != 0:
                 d.sane(rank=sanerank, axis=1)
-            d.apod_sin(maxi=0.5, axis=1).zf(zf1=4).ft_n_p().modulus().rem_ridge()
+            d.apod_sin(maxi=0.5, axis=1).zf(zf1=4).bk_ftF1().modulus().rem_ridge()
         scale = 50.0
         d.axis2.offset += ppm_offset*d.axis2.frequency
         if Config['TMS']:
@@ -332,7 +330,7 @@ def process_2D(xarg):
         d.apod_sin(maxi=0.5, axis=2).zf(zf2=2).ft_sim()
         if sanerank != 0:
             d.sane(rank=sanerank, axis=1)
-        d.apod_sin(maxi=0.5, axis=1).zf(zf1=4).ft_sh_tppi().modulus().rem_ridge()
+        d.apod_sin(maxi=0.5, axis=1).zf(zf1=4).bk_ftF1().modulus().rem_ridge()
         scale = 20.0
         d.axis2.offset += ppm_offset*d.axis2.frequency
         if Config['TMS']:
@@ -342,10 +340,13 @@ def process_2D(xarg):
         print ("HSQC")
         if 'ml' in exptype:
             print ("TOCSY-HSQC")
-        d.apod_sin(maxi=0.5, axis=2).zf(zf2=2).ft_sim().conv_n_p()
+        d.apod_sin(maxi=0.5, axis=2).zf(zf2=2).ft_sim()
         if sanerank != 0:
-            d.sane(rank=sanerank, axis=1)
-        d.apod_sin(maxi=0.5, axis=1).zf(zf1=4).ft_sh().modulus().rem_ridge()
+            if d.size1 > 200:
+                d.sane(rank=sanerank, axis=1)
+            else:
+                print('size too small for sane')
+        d.apod_sin(maxi=0.5, axis=1).zf(zf1=4).bk_ftF1().modulus().rem_ridge()  # ft_sh()
         scale = 10.0
         d.axis2.offset += ppm_offset*d.axis2.frequency
         if Config['TMS']:
@@ -408,7 +409,7 @@ def plot_2D(d, scale, numb2, resdir ):
     exptype =  bk.read_param(bk.find_acqu( fiddir ) ) ['$PULPROG']
     exptype =  exptype[1:-1]  # removes the <...>
 
-    d.display(scale=scale)
+    d.display(scale="auto") #scale)
     plt.savefig( op.join(resdir, '2D', exptype+'_'+fidname+'.pdf') ) # Creates a PDF of the 2D spectrum without peaks
     d.display_peaks(color="g")
     plt.savefig( op.join(resdir, '2D', exptype+'_'+fidname+'_pp.pdf') ) # Creates a PDF of the 2D spectrum with peaks

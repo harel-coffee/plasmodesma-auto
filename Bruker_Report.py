@@ -29,7 +29,7 @@ import datetime
 # list of param to print - you may modify !
 # only handles P and D as lists for the moment...
 paramtoprint = ['PULPROG', 'SFO1', 'NS', 'TE', 'TD', 'RG', 'SW', 'O1','D1','P1']
-param2Dtoprint = ['SFO1', 'TD','SW', 'O1', 'D9']
+param2Dtoprint = ['SFO1', 'TD','SW', 'O1', 'D9', 'FnMODE']
 paramDOSYtoprint = ['D20','P30']
 
 reportfile = 'report.csv'
