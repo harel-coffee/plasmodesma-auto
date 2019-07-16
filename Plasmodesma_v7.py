@@ -113,6 +113,7 @@ Config = {
     'BCK_13C_2D' : 1.0,    # bucket size for 2D 13C
     'BCK_DOSY' : 1.0,      # bucket size for vertical axis of DOSY experiments
     'BCK_PP' : True        # if True computes number of peaks per bucket (different from global peak-picking)
+    'TITLE': False         # if true, the title file will be parsed for standard values (see documentation in Bruker_Report.py)
 }
 
 def set_param():
@@ -611,7 +612,7 @@ def main(DIREC, Nproc):
             print("**** ERROR with file {}\n---- not processed\n".format(sp))
             exc_type, exc_value, exc_traceback = sys.exc_info()
             traceback.print_tb(exc_traceback, limit=1, file=sys.stdout)
-    Bruker_Report.generate_report( DIREC, op.join(DIREC, 'report.csv') )
+    Bruker_Report.generate_report( DIREC, op.join(DIREC, 'report.csv'), do_title=Config['TITLE'] )
     analysis_report(op.join( DIREC, 'Results'), op.join( DIREC,'analysis.csv'))
 
 if __name__ == "__main__":

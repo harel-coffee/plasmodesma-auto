@@ -32,6 +32,7 @@ paramtoprint = ['PULPROG', 'SFO1', 'NS', 'TE', 'TD', 'RG', 'SW', 'O1','D1','P1']
 param2Dtoprint = ['SFO1', 'TD','SW', 'O1', 'D9', 'FnMODE']
 paramDOSYtoprint = ['D20','P30']
 
+# name of the report file
 reportfile = 'report.csv'
 
 allparams = paramtoprint + param2Dtoprint + paramDOSYtoprint
@@ -51,8 +52,8 @@ def read_param(filename="acqus"):
     debug = 0
     with open(filename) as fin:
         # read file
-        dict = {}
-        dict['comments']=""
+        dico = {}
+        dico['comments']=""
         f=fin.read()
         fin.close()
         ls= f.split("\n")
@@ -63,7 +64,7 @@ def read_param(filename="acqus"):
             v = v.strip()
             if debug: print("-",v,"-")
             if (re.search(r"^\$\$",v)):  # print comments
-                dict['comments']=dict['comments']+"\n"+v
+                dico['comments']=dico['comments']+"\n"+v
             else:
                 m=re.match(r"##(.*)= *\(0\.\.([0-9]*)\)(.*)$",v )   # match arrays
                 if (m is not None):
@@ -80,27 +81,96 @@ def read_param(filename="acqus"):
                     if debug: print(key,numb,len(array),array)
                     if ((int(numb)+1) != len(array)):   # (0..9) is 10 entries !
                         raise "size mismatch in array"
-                    dict[key] = array
+                    dico[key] = array
                     continue
                 m=re.match(r"##(.*)= *<(.*)>",v )   #match string
                 if (m is not None): 
                     if debug: print("STRING",v)
                     (key,val) = m.group(1,2)
-                    dict[key] = val
+                    dico[key] = val
                     continue
                 m=re.match(r"##(.*)= *(.*)$",v )   #match value
                 if (m is not None):
                     if debug: print("VAL",v)
                     (key,val) = m.group(1,2)
-                    dict[key] = val
+                    dico[key] = val
                     continue
 # debug code
     if debug:
-        for i in dict.keys():
-            print(i+" = "+str(dict[i]))
-    return dict
+        for i in dico.keys():
+            print(i+" = "+str(dico[i]))
+    return dico
+
+def title_parser(textfile):
+    """
+    given a title file, parses the content for standardized information:
+    eg:
+        [PFDA] = 10 mM, ds DMSO 5mm TE 298K
+        EMGE_016
+    parsed as:
+        [~name_of_product~] = ~concentration~ mM, ds ~Solvent_name~  TE ~Temp_value~ 
+        ~product_reference~
+    Arthur Steur - july 2019
+    """
+    dico = {} # create dictionary 'dico' to store our title elements
+    
+    produit_and_conc = re.compile(r'\[([a-zA-Z]+)\] *= *([0-9]+) *(\w+)M,?')
+    # we make a re to find the product name and the concentration with the unit magnitude
+    matches1 = produit_and_conc.search(textfile)
+    
+    solvent = re.compile(r'ds *([0-9a-zA-Z]+ *[/\+]? *(D2O)?)') # matches the solvent
+    matches2 = solvent.search(textfile)
+    
+    temperature = re.compile(r' *([0-9]+) *(K)',) 
+    # matches the temperature with the unit magnitude
+    matches3 = temperature.search(textfile)
+    
+    internal_reference = re.compile(r'^([0-9a-zA-Z]+[_-][0-9a-zA-Z_-]+)',re.M)
+    # matches the internal reference 
+    matches4 = internal_reference.search(textfile)
+    
+    # list making process begins.
+    try:
+        dico['product'] = matches1.group(1) 
+    except AttributeError:
+        dico['product'] = "-"
+        dico['concentration'] = "NaN"
+    else:
+        if matches1.group(3) == 'm': # m here mean mili(M)
+            dico['concentration'] = str(int(matches1.group(2))*(10**(-3)))
+        if matches1.group(3) == 'u':# u here mean micro(M)
+            dico['concentration'] = str(int(matches1.group(2))*(10**(-6)))
+    
+    try:
+        dico['solvent'] = matches2.group(1)
+    except AttributeError:
+        dico['solvent'] = '-'
+    
+    try:
+        dico['temperature'] = matches3.group(1)
+    except AttributeError:
+        dico['temperature'] = '-'
+
+    try:
+        dico['product_reference'] = matches4.group()
+    except AttributeError:
+        dico['product_reference'] = '-'
+    
+    for i in range(1,len(dico)): # loops i for each element in the dictionary
+        try:
+            textfile = textfile.replace(eval('matches'+ str(i)).group(),"")
+        except AttributeError:
+            continue
+        # replace the match(i) with "" which is nothing. 
+        
+    # everything in textfile that was already put in the dictionary is now deleted from
+    # the previous loop above. now we take that last bit of string and put it back in 'dico'.
+    dico['comment'] = textfile.strip().replace(',',' ').replace('\n',' ') 
+    
+    return dico
 
 def readplist(paramtoadd, paramdict):
+    "parse lists from acqus files - only D and P so far"
     m = (re.match('[DP]([0-9]+)',paramtoadd))
     m = (re.match('[DP]([0-9]+)',paramtoadd))
     if m :    # delays and pulses are special !
@@ -111,7 +181,11 @@ def readplist(paramtoadd, paramdict):
         val = paramdict['$%s'%paramtoadd]
     return val
     
-def generate_report(direc, reportfile):
+def generate_report(direc, reportfile, do_title=False):
+    """
+    create a file 'reportfile' with parameters of all experiments found in direc
+    if do_title is true, the title file will be parsed for standard values (see documentation)
+    """
     mcurr = '--'
     count = 0
     with open(reportfile,'w') as F:
@@ -120,7 +194,11 @@ def generate_report(direc, reportfile):
         second_head += "2D, " + " ,"*(len(param2Dtoprint)-1)
         second_head += "DOSY"
         print(second_head, file=F)                                 # csv comment
-        print ( *(["manip", "expno", "date"]+ allparams), sep=',', file=F)  # csv header
+        parm_header = ["manip", "expno", "date"]+ allparams
+        if do_title:
+            title_keys = ['product', 'concentration', 'solvent', 'temperature', 'product_reference', 'comment']
+            parm_header = parm_header + title_keys
+        print ( *parm_header, sep=',', file=F)  # csv header
     #    for f in glob.glob('/DATA/DOSY_Sumofusion/*/*/acqus'):
         for root, dirs, files in os.walk(direc):
             if 'acqus' in files:
@@ -154,7 +232,14 @@ def generate_report(direc, reportfile):
                         plist.append( readplist(param, p) )
                 else:
                     plist = plist + ['-']*len(paramDOSYtoprint)
-            
+
+                # then title
+                if do_title:
+                    title = op.join(root,'pdata','1','title')
+                    pt = title_parser(open(title).read())
+                    for k in title_keys:
+                        plist.append(pt[k])
+
                 print (*plist, sep=',',file=F)
                 count += 1
     if mcurr == '--':
