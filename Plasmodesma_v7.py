@@ -95,11 +95,14 @@ import Bruker_Report
 global Config
 Config = {
     'NPROC' : 2,       # The default number of processors for calculation, if  value >1 will activate multiprocessing mode
-    'BC_ITER' : 5,     # Used for baselineC orrection; It is advisable to use a larger number for iterating, e.g. 5
+                       # for best results keep it below your actual number of cores ! (MKL and hyperthreading !).
+    'BC_ITER' : 5,     # Used for baseline Correction; It is advisable to use a larger number for iterating, e.g. 5
     'TMS' : True,      # if true, TMS (or any 0 ppm reference) is supposed to be present and used for ppm calibration
     'LB_1H' : 1.0,     # exponential linebroadening in Hz used for 1D 1H 
     'LB_13C' : 3.0,    # exponential linebroadening in Hz used for 1D 13C
-    'SANERANK' : 20,   # used for denoising of 2D experiments, typically 10-50; setting to 0 deactivates denoising
+    'SANERANK' : 20,   # used for denoising of 2D experiments, sane is an improveded version of urQRd
+                       # typically 10-50 form homo2D; 5-15 for HSQC, setting to 0 deactivates denoising
+                       # takes time !  and time is proportional to SANERANK (hint more is not better !)
     'DOSY_LAZY' : False,    # if True, will not reprocess DOSY experiment if an already processed file is on the disk
     'PALMA_ITER' : 20000,  # used for processing of DOSY
     'BCK_1H_1D' : 0.01,    # bucket size for 1D 1H
@@ -109,7 +112,7 @@ Config = {
     'BCK_13C_1D' : 0.03,   # bucket size for 1D 13C
     'BCK_13C_2D' : 1.0,    # bucket size for 2D 13C
     'BCK_DOSY' : 1.0,      # bucket size for vertical axis of DOSY experiments
-    'BCK_PP' : True       #Number of peaks per bucket
+    'BCK_PP' : True        # if True computes number of peaks per bucket (different from global peak-picking)
 }
 
 def set_param():
@@ -342,7 +345,7 @@ def process_2D(xarg):
             print ("TOCSY-HSQC")
         d.apod_sin(maxi=0.5, axis=2).zf(zf2=2).ft_sim()
         if sanerank != 0:
-            if d.size1 > 200:
+            if d.size1 > 200:   # some HSQC are very short!
                 d.sane(rank=sanerank, axis=1)
             else:
                 print('size too small for sane')
