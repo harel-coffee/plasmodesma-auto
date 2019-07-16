@@ -10,5 +10,5 @@
 "BCK_PP": true,
 "BCK_1H_LIMITS": [0.5, 9.5],
 "BCK_13C_LIMITS" : [-10, 150],
-"TITLE": false
+"TITLE": true
 }

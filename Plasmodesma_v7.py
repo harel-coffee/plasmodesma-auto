@@ -112,7 +112,7 @@ Config = {
     'BCK_13C_1D' : 0.03,   # bucket size for 1D 13C
     'BCK_13C_2D' : 1.0,    # bucket size for 2D 13C
     'BCK_DOSY' : 1.0,      # bucket size for vertical axis of DOSY experiments
-    'BCK_PP' : True        # if True computes number of peaks per bucket (different from global peak-picking)
+    'BCK_PP' : True,       # if True computes number of peaks per bucket (different from global peak-picking)
     'TITLE': False         # if true, the title file will be parsed for standard values (see documentation in Bruker_Report.py)
 }
 
