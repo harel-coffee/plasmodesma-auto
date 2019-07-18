@@ -69,7 +69,7 @@ import multiprocessing as mp
 POOL = None      # will be overwritten by main()
 import numpy as np
 import matplotlib.pyplot as plt
-VERSION = "7.0"
+VERSION = "7.01"
 
 print ("**********************************************************************************")
 print ("*                              PLASMODESMA program %3s                           *"%(VERSION,))
@@ -113,6 +113,7 @@ Config = {
     'BCK_13C_2D' : 1.0,    # bucket size for 2D 13C
     'BCK_DOSY' : 1.0,      # bucket size for vertical axis of DOSY experiments
     'BCK_PP' : True,       # if True computes number of peaks per bucket (different from global peak-picking)
+    'BCK_SK' : False,      # if True computes skewness and kurtosis over each bucket
     'TITLE': False         # if true, the title file will be parsed for standard values (see documentation in Bruker_Report.py)
 }
 
@@ -276,7 +277,7 @@ def process_1D(xarg):
 
     bkout = open( op.join(resdir, '1D', fidname+'_bucketlist.csv')  , 'w')
     #d.bucket1d(file=bkout)
-    d.bucket1d(file=bkout, zoom=Config['BCK_1H_LIMITS'], bsize=Config['BCK_1H_1D'], pp=Config['BCK_PP'])
+    d.bucket1d(file=bkout, zoom=Config['BCK_1H_LIMITS'], bsize=Config['BCK_1H_1D'], pp=Config['BCK_PP'], sk=Config['BCK_SK'])
     bkout.close()
     d.save(op.join( fiddir,"processed.gs1") )
     return d
@@ -487,16 +488,16 @@ def analyze_2D(d, name, pplevel=10):
     BCK_DOSY =  Config['BCK_DOSY']
     BCK_PP = Config['BCK_PP']
     if name.find('cosy') != -1 or name.find('dipsi') != -1:
-        dd.bucket2d(file=bkout, zoom=(BCK_1H_LIMITS, BCK_1H_LIMITS), bsize=(BCK_1H_2D, BCK_1H_2D),pp=BCK_PP )
+        dd.bucket2d(file=bkout, zoom=(BCK_1H_LIMITS, BCK_1H_LIMITS), bsize=(BCK_1H_2D, BCK_1H_2D), pp=BCK_PP, sk=Config['BCK_SK'] )
     elif name.find('hsqc') != -1 or name.find('hmbc') != -1:
-        dd.bucket2d(file=bkout, zoom=( BCK_13C_LIMITS, BCK_1H_LIMITS), bsize=(BCK_13C_2D, BCK_1H_2D),pp=BCK_PP )
+        dd.bucket2d(file=bkout, zoom=( BCK_13C_LIMITS, BCK_1H_LIMITS), bsize=(BCK_13C_2D, BCK_1H_2D), pp=BCK_PP, sk=Config['BCK_SK'] )
     elif name.find('ste') != -1 or name.find('led') != -1:
         ldmin = np.log10(d.axis1.dmin)
         ldmax = np.log10(d.axis1.dmax)
         sw = ldmax-ldmin
         dd.buffer[:,:] = dd.buffer[::-1,:]  # return axis1 
         dd.axis1 = NMRAxis(specwidth=100*sw, offset=100*ldmin, frequency = 100.0, itype = 0)     # faking a 100MHz where ppm == log(D)
-        dd.bucket2d(file=bkout, zoom=( (ldmin, ldmax) , BCK_1H_LIMITS), bsize=(BCK_DOSY, BCK_1H_2D),pp=BCK_PP ) #original parameters
+        dd.bucket2d(file=bkout, zoom=( (ldmin, ldmax) , BCK_1H_LIMITS), bsize=(BCK_DOSY, BCK_1H_2D), pp=BCK_PP, sk=Config['BCK_SK'] ) #original parameters
     else:
         print ("*** Name not found!")
     bkout.close()
@@ -591,6 +592,9 @@ def main(DIREC, Nproc):
         raise Exception("\n\nDirectory %s is non-valid"%DIREC)
     if len( glob( op.join(DIREC, '*') ) )==0:
         print( "WARNING\n\nDirectory %s is empty"%DIREC)
+
+    Bruker_Report.generate_report( DIREC, op.join(DIREC, 'report.csv'), do_title=Config['TITLE'] )
+
     for sp in glob( op.join(DIREC, '*') ):
         # validity of sp
         if not op.isdir(sp):
@@ -612,7 +616,6 @@ def main(DIREC, Nproc):
             print("**** ERROR with file {}\n---- not processed\n".format(sp))
             exc_type, exc_value, exc_traceback = sys.exc_info()
             traceback.print_tb(exc_traceback, limit=1, file=sys.stdout)
-    Bruker_Report.generate_report( DIREC, op.join(DIREC, 'report.csv'), do_title=Config['TITLE'] )
     analysis_report(op.join( DIREC, 'Results'), op.join( DIREC,'analysis.csv'))
 
 if __name__ == "__main__":
