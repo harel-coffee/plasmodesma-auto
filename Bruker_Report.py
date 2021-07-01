@@ -235,11 +235,19 @@ def generate_report(direc, reportfile, do_title=False):
 
                 # then title
                 if do_title:
-                    title = op.join(root,'pdata','1','title')
-                    pt = title_parser(open(title).read())
-                    for k in title_keys:
-                        plist.append(pt[k])
-
+                    titlefound = False
+                    for titre in ('title', 'TITLE', 'title.txt', 'TITLE.TXT'):   # search in possible names
+                        title = op.join(root,'pdata','1', titre)
+                        titlefound = op.exists(title)
+                        if titlefound:
+                            break
+                    if titlefound:
+                        pt = title_parser(open(title).read())
+                        for k in title_keys:
+                            plist.append(pt[k])
+                    else:
+                        for k in title_keys:
+                            plist.append('...')
                 print (*plist, sep=',',file=F)
                 count += 1
     if mcurr == '--':
