@@ -4,7 +4,7 @@
 """
 Program to compute peak and bucket lists from a set of 1D and 2D
 
-Petar Markov & M-A Delsuc,  
+First version: Petar Markov & M-A Delsuc,  
 
 
 v1: renamed to Plasmodesma, made it working   PM MAD
@@ -16,6 +16,7 @@ v6: final version for publication           MAD
 v6.3 : added parallelization of 1D and 2D Processing    MAD
 v6.4 : corrected so that there might be no 1D or 2D to process    MAD
 v7.0 : code for the Faraday 2019 paper - adapted to server - added reading from zip 
+v7.1: Adapted to newer version of Spike, and changed use interface...
 
 This code is associated to the publication:
 Margueritte, L., Markov, P., Chiron, L., Starck, J.-P., Vonthron Sénécheau, C., Bourjot, M., & Delsuc, M.-A.
@@ -76,33 +77,27 @@ print ("*                              PLASMODESMA program %3s                  
 print ("*           - automatic advanced processing of NMR experiment series -           *")
 print ("*                                                                                *")
 print ("**********************************************************************************")
-print ("Loading utilities ...")
-
-import spike
-from spike.Algo.BC import correctbaseline # Necessary for the baseline correction
-import spike.File.BrukerNMR as bk
-import spike.NMR as npkd
-from spike.NPKData import as_cpx
-from spike.util.signal_tools import findnoiselevel
-import spike.plugins.bcorr as bcorr
-
-import Bruker_Report
 
 #---------------------------------------------------------------------------
 #2. Parameters
 # These can be changed to tune the program behavior
 # These are default behaviours
 # these values will be overloaded with the content of the RunConfig.json file if present
+
 global Config
 Config = {
-    'NPROC' : 2,            # The default number of processors for calculation, if  value >1 will activate multiprocessing mode
+    'NPROC' : 1,            # The default number of processors for calculation, if  value >1 will activate multiprocessing mode
                             # for best results keep it below your actual number of cores ! (MKL and hyperthreading !).
-    'BC_ALGO' : 'spline',   # baseline correction algo, either 'spline' or 'chunk'   
-    'BC_ITER' : 5,          # Used for baseline Correction; It is advisable to use a larger number for iterating, e.g. 5
+    'BC_ALGO' : 'Spline',   # baseline correction algo, either 'None', 'Spline' or 'Sterative'   
+    'BC_ITER' : 5,          # Used by iterative baseline Correction; It is advisable to use a larger number for iterating, e.g. 5
+    'BC_CHUNKSZ' : 1000,    # chunk size used by iterative baseline Correction
+    'BC_NPOINTS' : 8,       # number of pivot points used by spline baseline Correction
     'TMS' : True,           # if true, TMS (or any 0 ppm reference) is supposed to be present and used for ppm calibration
     'LB_1H' : 1.0,          # exponential linebroadening in Hz used for 1D 1H 
     'LB_13C' : 3.0,         # exponential linebroadening in Hz used for 1D 13C
-    'SANERANK' : 20,        # used for denoising of 2D experiments, sane is an improveded version of urQRd
+    'LB_19F' : 1.0,         # exponential linebroadening in Hz used for 1D 19F
+    'MODUL_19F' : True,     # 19F are processed in modulus
+    'SANERANK' : 20,        # used for denoising of 2D experiments, sane is an improved version of urQRd
                             # typically 10-50 form homo2D; 5-15 for HSQC, setting to 0 deactivates denoising
                             # takes time !  and time is proportional to SANERANK (hint more is not better !)
     'DOSY_LAZY' : False,    # if True, will not reprocess DOSY experiment if an already processed file is on the disk
@@ -113,21 +108,31 @@ Config = {
     'BCK_13C_LIMITS' : [-10, 150],  # limits of zone to  bucket and display in 13C
     'BCK_13C_1D' : 0.03,    # bucket size for 1D 13C
     'BCK_13C_2D' : 1.0,     # bucket size for 2D 13C
+    'BCK_19F_LIMITS' : [-200, -50],  # limits of zone to  bucket and display in 19F
+    'BCK_19F_1D' : 1.0,    # bucket size for 1D 19F
+    'BCK_19F_2D' : 1.0,     # bucket size for 2D 19F
     'BCK_DOSY' : 1.0,       # bucket size for vertical axis of DOSY experiments
     'BCK_PP' : True,        # if True computes number of peaks per bucket (different from global peak-picking)
     'BCK_SK' : False,       # if True computes skewness and kurtosis over each bucket
     'TITLE': False          # if true, the title file will be parsed for standard values (see documentation in Bruker_Report.py)
 }
 
-def set_param():
+#---------------------------------------------------------------------------
+#3. Utilities
+
+def set_param(DIREC='.'):
     "prgm parameters"
     global Config
-    print("current directory: ", os.path.realpath(os.getcwd()))
+    print("Current directory: ", os.path.realpath(os.getcwd()))
+    print("Working directory: ", DIREC)
     try:
-        with open("RunConfig.json","r") as f:
-            config = json.load(f)
+        with open(op.join(DIREC,"RunConfig.json"),"r") as f:
+            try:
+                config = json.load(f)
+            except:
+                raise Exception('Error in reading Configuration file %s'%(op.join(DIREC,"RunConfig.json"),))
     except IOError:
-        print('*** WARNING - no RunConfig.json file - using default configuration')
+        print('*** WARNING - no RunConfig.json file found - using default configuration')
     else:  # if no error
         for k in config.keys():
             if k in Config.keys():
@@ -136,8 +141,34 @@ def set_param():
                 print ("*** %s entry in RunConfig.json  is ignored - wrong entry"%k)
     #print('configuration:\n',Config)
 
-#---------------------------------------------------------------------------
-#3. Utilities
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('-D', '--Data', action='store', dest='DIREC', default=" .", help='DIRECTORY_with_NMR_experiments, default=.')
+    parser.add_argument('-N', action='store', dest='Nproc', default=Config['NPROC'], type=int, help='number of processors to use, default=%d'%Config['NPROC'])
+    parser.add_argument('-n', '--dry',  action='store_true', help="list parameters and do not run")
+    args = parser.parse_args()
+
+    set_param(args.DIREC)
+    Config['NPROC'] = args.Nproc
+    print("params are:")
+    #pprint.pprint(Config)
+    print(json.dumps(Config, indent=4))
+
+print ("Loading utilities ...")
+
+import spike
+import spike.NMR as npkd
+from spike.Algo.BC import correctbaseline # Necessary for the baseline correction
+import spike.File.BrukerNMR as bk
+from spike.NPKData import as_cpx
+from spike.util.signal_tools import findnoiselevel
+import spike.plugins.bcorr as bcorr
+
+import Bruker_Report
+
+
+
 import ctypes
 mkl_rt = ctypes.CDLL('libmkl_rt.so')
 mkl_get_max_threads = mkl_rt.mkl_get_max_threads
@@ -178,24 +209,32 @@ def FT1D(numb1, ppm_offset=0, autoph=True, ph0=0, ph1=0):
 
     proc = bk.read_param(numb1[:-3]+'pdata/1/procs')
     d = bk.Import_1D(numb1)
-    d.apod_em(Config['LB_1H'],1).zf(2).ft_sim()
-    if not autoph:
-        p0,p1 = phase_from_param()
-        d.phase( p0+ph0, p1+ph1 )   # Performs the stored phase correction
+    exptype =  d.params['acqu']['$PULPROG']
+    exptype =  exptype[1:-1]  # removes the <...>
+    if Config['MODUL_19F'] and ('zgse1d' in exptype):
+        d.apod_em(Config['LB_19F'],1).kaiser(3.5).zf(2).ft_sim().modulus()
     else:
-        d.bruker_corr().apmin()     # automatic phase correction
+        d.apod_em(Config['LB_1H'],1).zf(2).ft_sim()
+        if not autoph:
+            p0,p1 = phase_from_param()
+            d.phase( p0+ph0, p1+ph1 )   # Performs the stored phase correction
+        else:
+            d.bruker_corr().apmin()     # automatic phase correction
     d.unit = 'ppm'
     d.axis1.offset += ppm_offset*d.axis1.frequency
 
-    spec = np.real( as_cpx(d.buffer) )
-    # the following is a bit convoluted baseline correction, 
-    bl = correctbaseline(spec, iterations=Config['BC_ITER'], nbchunks=d.size1//1000)
-    dd = d.copy()
-    dd.set_buffer(bl)
-    dd.unit = 'ppm'
-    d.real()
-    d -= dd # Equal to d=d-dd; Used instead of (spec-bl)
-    
+    spec = np.real( d.get_buffer() )
+    if Config['BC_ALGO'] == 'Iterative':
+        # the following is a bit convoluted baseline correction, 
+        bl = correctbaseline(spec, iterations=Config['BC_ITER'], nbchunks=d.size1//Config['BC_CHUNKSZ'])
+        dd = d.copy()
+        dd.set_buffer(bl)
+        dd.unit = 'ppm'
+        d.real()
+        d -= dd # Equal to d=d-dd; Used instead of (spec-bl)
+    elif Config['BC_ALGO'] == 'Spline':
+        d.real()
+        d.bcorr(method='spline', xpoints=Config['BC_NPOINTS'],  nsmooth=1)
     return d
 
 def autozero(d, z1=(0.1,-0.1), z2=(0.1,-0.1),):
@@ -585,10 +624,22 @@ def analysis_report(resdir, fname):
                 print (op.basename(exp), csvsplit[1], csvsplit[0], csvname, firstl[1:], sep=',', file=F)
 
 #---------------------------------------------------------------------------
-def main(DIREC, Nproc):
+def main(args):
     "Creates a new directory for every sample along with subdirectories for the 1D and 2D data"
     import traceback
     global POOL
+    Nproc = args.Nproc
+    DIREC = args.DIREC
+    if not op.isdir(DIREC):
+        raise Exception("\n\nDirectory %s is non-valid"%DIREC)
+    if len( glob( op.join(DIREC, '*') ) )==0:
+        print( "WARNING\n\nDirectory %s is empty"%DIREC)
+
+    Bruker_Report.generate_report( DIREC, op.join(DIREC, 'report.csv'), do_title=Config['TITLE'] )
+
+    if args.dry:
+        return
+
     if Nproc > 1:
         print('Processing on %d processors'%Nproc)
         mkl_set_num_threads(1)
@@ -596,13 +647,6 @@ def main(DIREC, Nproc):
         POOL = mp.Pool(Nproc)
     else:
         POOL = None
-
-    if not op.isdir(DIREC):
-        raise Exception("\n\nDirectory %s is non-valid"%DIREC)
-    if len( glob( op.join(DIREC, '*') ) )==0:
-        print( "WARNING\n\nDirectory %s is empty"%DIREC)
-
-    Bruker_Report.generate_report( DIREC, op.join(DIREC, 'report.csv'), do_title=Config['TITLE'] )
 
     for sp in glob( op.join(DIREC, '*') ): 
         # validity of sp
@@ -628,18 +672,8 @@ def main(DIREC, Nproc):
     analysis_report(op.join( DIREC, 'Results'), op.join( DIREC,'analysis.csv'))
 
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('-d', action='store', dest='DIREC', default=" .", help='DIRECTORY_with_NMR_experiments, default=.')
-    parser.add_argument('-n', action='store', dest='Nproc', default=Config['NPROC'], type=int, help='number of processors to use, default=%d'%Config['NPROC'])
-    args = parser.parse_args()
-
-    set_param()
-    Config['NPROC'] = args.Nproc
-    print("params are:")
-    pprint.pprint(Config)
 
     print ("Processing ...")        
-    main(args.DIREC, args.Nproc)
+    main(args)
 
 
