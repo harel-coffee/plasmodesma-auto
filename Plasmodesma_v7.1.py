@@ -95,7 +95,7 @@ Config = {
     'TMS' : True,           # if true, TMS (or any 0 ppm reference) is supposed to be present and used for ppm calibration
     'LB_1H' : 1.0,          # exponential linebroadening in Hz used for 1D 1H 
     'LB_13C' : 3.0,         # exponential linebroadening in Hz used for 1D 13C
-    'LB_19F' : 1.0,         # exponential linebroadening in Hz used for 1D 19F
+    'LB_19F' : 4.0,         # exponential linebroadening in Hz used for 1D 19F
     'MODUL_19F' : True,     # 19F are processed in modulus
     'SANERANK' : 20,        # used for denoising of 2D experiments, sane is an improved version of urQRd
                             # typically 10-50 form homo2D; 5-15 for HSQC, setting to 0 deactivates denoising
@@ -210,11 +210,10 @@ def FT1D(numb1, ppm_offset=0, autoph=True, ph0=0, ph1=0):
     proc = bk.read_param(numb1[:-3]+'pdata/1/procs')
     d = bk.Import_1D(numb1)
     exptype =  d.params['acqu']['$PULPROG']
-    exptype =  exptype[1:-1]  # removes the <...>
     if Config['MODUL_19F'] and ('zgse1d' in exptype):
-        d.apod_em(Config['LB_19F'],1).kaiser(3.5).zf(2).ft_sim().modulus()
+        d.center().apod_em(Config['LB_19F'],1).zero_dsp(coeff=1.3).zf(2).ft_sim().modulus()
     else:
-        d.apod_em(Config['LB_1H'],1).zf(2).ft_sim()
+        d.center().apod_em(Config['LB_1H'],1).zf(2).ft_sim()
         if not autoph:
             p0,p1 = phase_from_param()
             d.phase( p0+ph0, p1+ph1 )   # Performs the stored phase correction
@@ -234,7 +233,7 @@ def FT1D(numb1, ppm_offset=0, autoph=True, ph0=0, ph1=0):
         d -= dd # Equal to d=d-dd; Used instead of (spec-bl)
     elif Config['BC_ALGO'] == 'Spline':
         d.real()
-        d.bcorr(method='spline', xpoints=Config['BC_NPOINTS'],  nsmooth=1)
+        d.bcorr(method='spline', xpoints=Config['BC_NPOINTS'],  nsmooth=3)
     return d
 
 def autozero(d, z1=(0.1,-0.1), z2=(0.1,-0.1),):
