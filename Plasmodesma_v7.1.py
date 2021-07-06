@@ -196,6 +196,22 @@ def mkdir(f):
     if not op.exists(f):
         os.makedirs(f)
 
+def findnucleus(data):
+    "preliminary"
+    SF =  data.params['acqu']['$SFO1']
+    if data.dim == 1:
+        if ('564' in SF):
+            nuc = '19F'
+        elif ('600' in SF):
+            nuc = '1H'
+        elif ('150' in SF):
+            nuc = '13C'
+        else:
+            raise Exception('Unknown nucleus')
+    else:
+        raise Exception('Reste à faire')
+    return nuc
+
 def FT1D(numb1, ppm_offset=0, autoph=True, ph0=0, ph1=0):
     "Performs FT and corrections of experiment 'numb1' and returns data"
     def phase_from_param():
@@ -209,8 +225,7 @@ def FT1D(numb1, ppm_offset=0, autoph=True, ph0=0, ph1=0):
 
     proc = bk.read_param(numb1[:-3]+'pdata/1/procs')
     d = bk.Import_1D(numb1)
-    exptype =  d.params['acqu']['$PULPROG']
-    if ('zgse1d' in exptype):
+    if (findnucleus(d) == '19F'):
         dd = d.copy().center().apod_em(Config['LB_19F'],1).zero_dsp(coeff=1.3).zf(2).ft_sim()   # work on a copy
         if Config['MODUL_19F']:
             d = dd.modulus()
@@ -329,7 +344,10 @@ def process_1D(xarg):
 
     bkout = open( op.join(resdir, '1D', fidname+'_bucketlist.csv')  , 'w')
     #d.bucket1d(file=bkout)
-    d.bucket1d(file=bkout, zoom=Config['BCK_1H_LIMITS'], bsize=Config['BCK_1H_1D'], pp=Config['BCK_PP'], sk=Config['BCK_SK'])
+    if (findnucleus(d) == '19F'):
+        d.bucket1d(file=bkout, zoom=Config['BCK_19F_LIMITS'], bsize=Config['BCK_19F_1D'], pp=Config['BCK_PP'], sk=Config['BCK_SK'])
+    else:
+        d.bucket1d(file=bkout, zoom=Config['BCK_1H_LIMITS'], bsize=Config['BCK_1H_1D'], pp=Config['BCK_PP'], sk=Config['BCK_SK'])
     bkout.close()
     d.save(op.join( fiddir,"processed.gs1") )
     return d
