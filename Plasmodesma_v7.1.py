@@ -210,8 +210,14 @@ def FT1D(numb1, ppm_offset=0, autoph=True, ph0=0, ph1=0):
     proc = bk.read_param(numb1[:-3]+'pdata/1/procs')
     d = bk.Import_1D(numb1)
     exptype =  d.params['acqu']['$PULPROG']
-    if Config['MODUL_19F'] and ('zgse1d' in exptype):
-        d.center().apod_em(Config['LB_19F'],1).zero_dsp(coeff=1.3).zf(2).ft_sim().modulus()
+    if ('zgse1d' in exptype):
+        dd = d.copy().center().apod_em(Config['LB_19F'],1).zero_dsp(coeff=1.3).zf(2).ft_sim()   # work on a copy
+        if Config['MODUL_19F']:
+            d = dd.modulus()
+        else:
+            dd.bruker_corr().apmin()
+            p0,p1 = (dd.axis1.P0, dd.axis1.P1)
+            d.center().apod_em(Config['LB_19F'],1).zf(2).ft_sim().bruker_corr().phase(p0,p1)
     else:
         d.center().apod_em(Config['LB_1H'],1).zf(2).ft_sim()
         if not autoph:
