@@ -1,7 +1,7 @@
 # plasmodesma
 A project to automatically process a set of 1D and 2D NMR experiments
 
-*This program is associated to the Manuscript*
+*This program is associated to the publication*
 
 # Automatic differential analysis of NMR experiments in complex samples
 
@@ -31,6 +31,15 @@ It concentrate on the detection and identification step of unknown compounds, as
 It provides all the signal processing steps, as well as peak-picking and bucketing of 1D and 2D spectra.
 The main step allowing a strong reduction of the size of the data is the bucketing of the area under the spectra.
 Plasmodesma is a novel tool which should be useful to decipher complex mixtures, particularly in the discovery of biologically active natural products from plants extracts, but can also in drug discovery or metabolomics studies.
+
+---
+
+*it was further developped for the publication*
+## Automatised pharmacophoric deconvolution of plant extracts application to cinchona bark crude extract
+*Margueritte L., Duciel L., Bourjot M., Vonthron-Sénécheau C., Delsuc M-A.*
+
+Faraday Discussions (2019) **218**, 441-458 
+http://doi.org/10.1039/c8fd00242h
 
 ---
 
