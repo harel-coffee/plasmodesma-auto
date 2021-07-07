@@ -19,10 +19,17 @@ v7.0 : code for the Faraday 2019 paper - adapted to server - added reading from 
 v7.1: Adapted to newer version of Spike, and changed use interface...
 
 This code is associated to the publication:
-Margueritte, L., Markov, P., Chiron, L., Starck, J.-P., Vonthron Sénécheau, C., Bourjot, M., & Delsuc, M.-A.
+
 "Automatic differential analysis of NMR experiments in complex samples."
+Margueritte, L., Markov, P., Chiron, L., Starck, J.-P., Vonthron Sénécheau, C., Bourjot, M., & Delsuc, M.-A.
 Magnetic Resonance in Chemistry, (2018) 80(5), 1387.
 http://doi.org/10.1002/mrc.4683
+
+and developped for the publication:
+"Automatised pharmacophoric deconvolution of plant extracts application to cinchona bark crude extract"
+Margueritte L., Duciel L., Bourjot M., Vonthron-Sénécheau C., Delsuc M-A.
+Faraday Discussions (2019) 218, 441-458 
+http://doi.org/10.1039/c8fd00242h
 
 code is deposited in https://github.com/delsuc/plasmodesma
 
@@ -109,7 +116,7 @@ Config = {
     'BCK_13C_1D' : 0.03,    # bucket size for 1D 13C
     'BCK_13C_2D' : 1.0,     # bucket size for 2D 13C
     'BCK_19F_LIMITS' : [-200, -50],  # limits of zone to  bucket and display in 19F
-    'BCK_19F_1D' : 1.0,    # bucket size for 1D 19F
+    'BCK_19F_1D' : 0.1,    # bucket size for 1D 19F
     'BCK_19F_2D' : 1.0,     # bucket size for 2D 19F
     'BCK_DOSY' : 1.0,       # bucket size for vertical axis of DOSY experiments
     'BCK_PP' : True,        # if True computes number of peaks per bucket (different from global peak-picking)
