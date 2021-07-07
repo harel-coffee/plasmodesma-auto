@@ -27,10 +27,12 @@ import datetime
 ################################################################
 
 # list of param to print - you may modify !
-# only handles P and D as lists for the moment...
-paramtoprint = ['PULPROG', 'SFO1', 'NS', 'TE', 'TD', 'RG', 'SW', 'O1','D1','P1']
+paramtoprint = ['PULPROG', 'SFO1', 'NS', 'TE', 'TD', 'RG', 'SW', 'O1','D1','P1','PL12']
 param2Dtoprint = ['SFO1', 'TD','SW', 'O1', 'D9', 'FnMODE']
 paramDOSYtoprint = ['D20','P30']
+
+# for the program to recognize arrays, the arrayname should be given below ( | separated, no space)
+arraynames = 'D|P|PL|PCPD'
 
 # name of the report file
 reportfile = 'report.csv'
@@ -170,18 +172,17 @@ def title_parser(textfile):
     return dico
 
 def readplist(paramtoadd, paramdict):
-    "parse lists from acqus files - only D and P so far"
-    m = (re.match('[DP]([0-9]+)',paramtoadd))
-    m = (re.match('[DP]([0-9]+)',paramtoadd))
-    if m :    # delays and pulses are special !
-        i = int(m.group(1))
-        pp = paramdict['$'+paramtoadd[0]]
+    "parse lists from acqus files - only D, P, L and PL so far"
+    m = (re.match('(%s)([0-9]+)'%(arraynames,),paramtoadd))
+    if m :    # arrays are special !
+        i = int(m.group(2))
+        pp = paramdict['$'+m.group(1)]
         val = pp[i]
     else:
         val = paramdict['$%s'%paramtoadd]
     return val
     
-def generate_report(direc, reportfile, do_title=False):
+def generate_report(direc, reportfile, do_title=True):
     """
     create a file 'reportfile' with parameters of all experiments found in direc
     if do_title is true, the title file will be parsed for standard values (see documentation)
