@@ -1,4 +1,7 @@
-# coding: utf-8
+#!/usr/bin/env python
+
+# -*- coding: utf-8 -*-
+
 """
 This program takes a directory and build a report of all NMR experiments inside.
 
@@ -10,11 +13,13 @@ which creates a report.csv file
 
 Details of what is in report is defined internaly by the paramtoprint list.
 
-written by M-A Delsuc on march 2016
-some parts from spike (bitbucket.org/delsuc/spike )
-use it freely, licence is CC-BY 4.0 (use it freely, mention its source)
+written by M-A Delsuc, first version on march 2016
+some parts from spike ( github.com/spike-project/spike )
+use it freely, licence is CC-BY 4.0 (use it freely, mention its origin)
+
 """
 from __future__ import print_function
+# make it python2 / python 3 compatile
 import os
 import os.path as op
 import sys
@@ -27,7 +32,7 @@ import datetime
 ################################################################
 
 # list of param to print - you may modify !
-paramtoprint = ['PULPROG', 'SFO1', 'NS', 'TE', 'TD', 'RG', 'SW', 'O1','D1','P1','PL12']
+paramtoprint = ['PULPROG', 'SFO1', 'NS', 'TE', 'TD', 'RG', 'SW', 'O1','D1','P1','O2','PL12']
 param2Dtoprint = ['SFO1', 'TD','SW', 'O1', 'D9', 'FnMODE']
 paramDOSYtoprint = ['D20','P30']
 
@@ -116,14 +121,19 @@ def title_parser(textfile):
     """
     dico = {} # create dictionary 'dico' to store our title elements
     
-    produit_and_conc = re.compile(r'\[([a-zA-Z]+)\] *= *([0-9]+) *(\w+)M,?')
-    # we make a re to find the product name and the concentration with the unit magnitude
+    # we make a re to find various parameters, following a rather strict syntax:
+
+    # [ produc name ] = val, 
+    # produit_and_conc = re.compile(r'\[([\w\s]+)\]\s*=\s*([0-9\.]+)\s*(\w+)M,?')
+    produit_and_conc = re.compile(r'\[([\w\s]+)\]\s*=\s*([0-9\.]*\s\w+),?')
+
     matches1 = produit_and_conc.search(textfile)
     
-    solvent = re.compile(r'ds *([0-9a-zA-Z]+ *[/\+]? *(D2O)?)') # matches the solvent
+    # ds Solvent  
+    solvent = re.compile(r'ds +([0-9a-zA-Z/]+)') # matches the solvent
     matches2 = solvent.search(textfile)
     
-    temperature = re.compile(r' *([0-9]+) *(K)',) 
+    temperature = re.compile(r' *([0-9]+) *K',) 
     # matches the temperature with the unit magnitude
     matches3 = temperature.search(textfile)
     
@@ -138,10 +148,8 @@ def title_parser(textfile):
         dico['product'] = "-"
         dico['concentration'] = "NaN"
     else:
-        if matches1.group(3) == 'm': # m here mean mili(M)
-            dico['concentration'] = str(int(matches1.group(2))*(10**(-3)))
-        if matches1.group(3) == 'u':# u here mean micro(M)
-            dico['concentration'] = str(int(matches1.group(2))*(10**(-6)))
+        dico['product'] = matches1.group(1)
+        dico['concentration'] = matches1.group(2)
     
     try:
         dico['solvent'] = matches2.group(1)
@@ -168,7 +176,7 @@ def title_parser(textfile):
     # everything in textfile that was already put in the dictionary is now deleted from
     # the previous loop above. now we take that last bit of string and put it back in 'dico'.
     dico['comment'] = textfile.strip().replace(',',' ').replace('\n',' ') 
-    
+#    print(dico)
     return dico
 
 def readplist(paramtoadd, paramdict):
