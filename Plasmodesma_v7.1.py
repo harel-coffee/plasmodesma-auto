@@ -16,7 +16,7 @@ v6: final version for publication           MAD
 v6.3 : added parallelization of 1D and 2D Processing    MAD
 v6.4 : corrected so that there might be no 1D or 2D to process    MAD
 v7.0 : code for the Faraday 2019 paper - adapted to server - added reading from zip 
-v7.1: Adapted to newer version of Spike, and changed use interface...
+v7.1: Adapted to newer version of Spike, added 19F, changed user interface...
 
 This code is associated to the publication:
 
@@ -103,7 +103,7 @@ Config = {
     'LB_1H' : 1.0,          # exponential linebroadening in Hz used for 1D 1H 
     'LB_13C' : 3.0,         # exponential linebroadening in Hz used for 1D 13C
     'LB_19F' : 4.0,         # exponential linebroadening in Hz used for 1D 19F
-    'MODUL_19F' : True,     # 19F are processed in modulus
+    'MODUL_19F' : Flase,    # 19F are processed in modulus
     'SANERANK' : 20,        # used for denoising of 2D experiments, sane is an improved version of urQRd
                             # typically 10-50 form homo2D; 5-15 for HSQC, setting to 0 deactivates denoising
                             # takes time !  and time is proportional to SANERANK (hint more is not better !)
@@ -232,14 +232,20 @@ def FT1D(numb1, ppm_offset=0, autoph=True, ph0=0, ph1=0):
 
     proc = bk.read_param(numb1[:-3]+'pdata/1/procs')
     d = bk.Import_1D(numb1)
-    if (findnucleus(d) == '19F'):
-        dd = d.copy().center().apod_em(Config['LB_19F'],1).zero_dsp(coeff=1.3).zf(2).ft_sim()   # work on a copy
-        if Config['MODUL_19F']:
-            d = dd.modulus()
+    if (findnucleus(d) == '19F'):   # First 19F case
+        if Config['MODUL_19F']:      # modulus ? easy ! (but sloppy)
+            d.center().apod_em(Config['LB_19F'],1).zero_dsp(coeff=1.3).zf(2).ft_sim()
+            d.modulus()
         else:
-            dd.bruker_corr().apmin()
-            p0,p1 = (dd.axis1.P0, dd.axis1.P1)
-            d.center().apod_em(Config['LB_19F'],1).zf(2).ft_sim().bruker_corr().phase(p0,p1)
+            if 'OPERA' in d.params['acqu']['$PULPROG']:    # OPERA acquisition is different
+                d.center().apod_em(Config['LB_19F'],1).zf(2).ft_sim()
+                d.bk_pk().apmin()
+            else:   # phasing non-opera is tricky !
+                dd = d.copy().center().apod_em(Config['LB_19F'],1).zero_dsp(coeff=1.3).zf(2).ft_sim()   # work on a copy
+                dd.bk_pk()
+                dd.apmin()
+                p0,p1 = (dd.axis1.P0, dd.axis1.P1)    # copy apmin results
+                d.center().apod_em(Config['LB_19F'],1).zf(2).ft_sim().bk_pk().phase(p0,p1)
     else:
         d.center().apod_em(Config['LB_1H'],1).zf(2).ft_sim()
         if not autoph:

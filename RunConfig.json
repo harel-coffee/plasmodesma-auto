@@ -1,5 +1,5 @@
 {
-"TMS": true,
+"TMS": false,
 "SANERANK": 10,
 "DOSY_LAZY": true,
 "BCK_1H_1D": 0.03,
@@ -10,5 +10,6 @@
 "BCK_PP": true,
 "BCK_1H_LIMITS": [0.5, 9.5],
 "BCK_13C_LIMITS" : [-10, 150],
-"TITLE": true
+"TITLE": true,
+"MODUL_19F": false
 }
