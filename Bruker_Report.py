@@ -32,17 +32,15 @@ import datetime
 ################################################################
 
 # list of param to print - you may modify !
-paramtoprint = ['PULPROG', 'SFO1', 'NS', 'TE', 'TD', 'RG', 'SW', 'O1','D1','P1','O2','PL12']
+paramtoprint = ['PULPROG', 'SFO1', 'NS', 'TE', 'TD', 'RG', 'SW', 'O1','D1','P1']
 param2Dtoprint = ['SFO1', 'TD','SW', 'O1', 'D9', 'FnMODE']
 paramDOSYtoprint = ['D20','P30']
 
 # for the program to recognize arrays, the arrayname should be given below ( | separated, no space)
-arraynames = 'D|P|PL|PCPD'
+arraynames = 'D|P|PL|PCPD|SP'
 
 # name of the report file
 reportfile = 'report.csv'
-
-allparams = paramtoprint + param2Dtoprint + paramDOSYtoprint
 
 ################################################################
 def read_param(filename="acqus"):
@@ -180,7 +178,7 @@ def title_parser(textfile):
     return dico
 
 def readplist(paramtoadd, paramdict):
-    "parse lists from acqus files - only D, P, L and PL so far"
+    "parse lists from acqus files - only that ones defined in arraynames"
     m = (re.match('(%s)([0-9]+)'%(arraynames,),paramtoadd))
     if m :    # arrays are special !
         i = int(m.group(2))
@@ -190,11 +188,19 @@ def readplist(paramtoadd, paramdict):
         val = paramdict['$%s'%paramtoadd]
     return val
     
-def generate_report(direc, reportfile, do_title=True):
+def generate_report(direc, reportfile, do_title=True, addpar=[], add2Dpar=[], addDOSYpar=[] ):
     """
     create a file 'reportfile' with parameters of all experiments found in direc
     if do_title is true, the title file will be parsed for standard values (see documentation)
+    addpar, add2Dpar addDOSYpar are added to the parameter lists
     """
+    for p in addpar:
+        paramtoprint.append(p)
+    for p in add2Dpar:
+        param2Dtoprint.append(p)
+    for p in addDOSYpar:
+        paramDOSYtoprint.append(p)
+
     mcurr = '--'
     count = 0
     with open(reportfile,'w') as F:
@@ -203,7 +209,7 @@ def generate_report(direc, reportfile, do_title=True):
         second_head += "2D, " + " ,"*(len(param2Dtoprint)-1)
         second_head += "DOSY"
         print(second_head, file=F)                                 # csv comment
-        parm_header = ["manip", "expno", "date"]+ allparams
+        parm_header = ["manip", "expno", "date"] + paramtoprint + param2Dtoprint + paramDOSYtoprint
         if do_title:
             title_keys = ['product', 'concentration', 'solvent', 'temperature', 'product_reference', 'comment']
             parm_header = parm_header + title_keys

@@ -103,7 +103,7 @@ Config = {
     'LB_1H' : 1.0,          # exponential linebroadening in Hz used for 1D 1H 
     'LB_13C' : 3.0,         # exponential linebroadening in Hz used for 1D 13C
     'LB_19F' : 4.0,         # exponential linebroadening in Hz used for 1D 19F
-    'MODUL_19F' : Flase,    # 19F are processed in modulus
+    'MODUL_19F' : False,    # 19F are processed in modulus
     'SANERANK' : 20,        # used for denoising of 2D experiments, sane is an improved version of urQRd
                             # typically 10-50 form homo2D; 5-15 for HSQC, setting to 0 deactivates denoising
                             # takes time !  and time is proportional to SANERANK (hint more is not better !)
@@ -115,13 +115,16 @@ Config = {
     'BCK_13C_LIMITS' : [-10, 150],  # limits of zone to  bucket and display in 13C
     'BCK_13C_1D' : 0.03,    # bucket size for 1D 13C
     'BCK_13C_2D' : 1.0,     # bucket size for 2D 13C
-    'BCK_19F_LIMITS' : [-200, -50],  # limits of zone to  bucket and display in 19F
+    'BCK_19F_LIMITS' : [-230, -50],  # limits of zone to  bucket and display in 19F
     'BCK_19F_1D' : 0.1,    # bucket size for 1D 19F
     'BCK_19F_2D' : 1.0,     # bucket size for 2D 19F
     'BCK_DOSY' : 1.0,       # bucket size for vertical axis of DOSY experiments
     'BCK_PP' : True,        # if True computes number of peaks per bucket (different from global peak-picking)
     'BCK_SK' : False,       # if True computes skewness and kurtosis over each bucket
-    'TITLE': False          # if true, the title file will be parsed for standard values (see documentation in Bruker_Report.py)
+    'TITLE': False,         # if true, the title file will be parsed for standard values (see documentation in Bruker_Report.py)
+    'addpar': [],           # additional parameters for Bruker_Report
+    'add2Dpar': [],
+    'addDOSYpar': []
 }
 
 #---------------------------------------------------------------------------
@@ -177,8 +180,11 @@ import Bruker_Report
 
 
 import ctypes
-mkl_rt = ctypes.CDLL('libmkl_rt.so')
-mkl_get_max_threads = mkl_rt.mkl_get_max_threads
+try:
+    mkl_rt = ctypes.CDLL('libmkl_rt.so')               # only Linux !
+    mkl_get_max_threads = mkl_rt.mkl_get_max_threads
+except:
+    pass
 def mkl_set_num_threads(cores):
     mkl_rt.mkl_set_num_threads(ctypes.byref(ctypes.c_int(cores)))
 
@@ -671,7 +677,8 @@ def main(args):
     if len( glob( op.join(DIREC, '*') ) )==0:
         print( "WARNING\n\nDirectory %s is empty"%DIREC)
 
-    Bruker_Report.generate_report( DIREC, op.join(DIREC, 'report.csv'), do_title=Config['TITLE'] )
+    Bruker_Report.generate_report( DIREC, op.join(DIREC, 'report.csv'),
+            do_title=Config['TITLE'], addpar=Config['addpar'], add2Dpar=Config['add2Dpar'], addDOSYpar=Config['addDOSYpar'] )
 
     if args.dry:
         return
