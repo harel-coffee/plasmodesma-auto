@@ -128,7 +128,7 @@ def title_parser(textfile):
     matches1 = produit_and_conc.search(textfile)
     
     # ds Solvent  
-    solvent = re.compile(r'ds +([0-9a-zA-Z/]+)') # matches the solvent
+    solvent = re.compile(r'ds +([0-9a-zA-Z/-]+)') # matches the solvent
     matches2 = solvent.search(textfile)
     
     temperature = re.compile(r' *([0-9]+) *K',) 

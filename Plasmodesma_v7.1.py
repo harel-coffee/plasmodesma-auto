@@ -180,11 +180,13 @@ import Bruker_Report
 
 
 import ctypes
-try:
-    mkl_rt = ctypes.CDLL('libmkl_rt.so')               # only Linux !
-    mkl_get_max_threads = mkl_rt.mkl_get_max_threads
-except:
-    pass
+import platform
+if platform.system() == 'Linux':
+        mkl_rt = ctypes.CDLL('libmkl_rt.so')               # Linux !
+        mkl_get_max_threads = mkl_rt.mkl_get_max_threads
+elif platform.system() == 'Darwin':
+        mkl_rt = ctypes.CDLL('libmkl_rt.dylib')               # MacOs !
+        mkl_get_max_threads = mkl_rt.mkl_get_max_threads
 def mkl_set_num_threads(cores):
     mkl_rt.mkl_set_num_threads(ctypes.byref(ctypes.c_int(cores)))
 
