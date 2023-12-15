@@ -23,10 +23,7 @@ from __future__ import print_function
 import os
 import os.path as op
 import sys
-import glob
 import re
-import struct
-import time
 import datetime
 
 ################################################################
@@ -40,7 +37,7 @@ paramDOSYtoprint = ['D20','P30']
 arraynames = 'D|P|PL|PCPD|SP'
 
 # name of the report file
-reportfile = 'report.csv'
+Reportfile = 'report.csv'
 
 ################################################################
 def read_param(filename="acqus"):
@@ -275,12 +272,12 @@ def main():
         direc = sys.argv[1]
     except:
         print(__doc__)
-        exit(0)
+        sys.exit(0)
     if not op.exists(direc) or not op.isdir(direc):
         print ('\nWARNING - %s is not a valid directory\n'%direc)
         print(__doc__)
-        exit(1)
-    generate_report(direc, reportfile)
+        sys.exit(1)
+    generate_report(direc, Reportfile)
 
 if __name__ == "__main__":
     main()

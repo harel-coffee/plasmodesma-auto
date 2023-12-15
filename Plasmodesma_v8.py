@@ -77,7 +77,7 @@ import multiprocessing as mp
 POOL = None      # will be overwritten by main()
 import numpy as np
 import matplotlib.pyplot as plt
-VERSION = "7.1"
+VERSION = "7.2"
 
 print ("**********************************************************************************")
 print ("*                              PLASMODESMA program %3s                           *"%(VERSION,))
@@ -169,11 +169,12 @@ print ("Loading utilities ...")
 
 import spike
 import spike.NMR as npkd
-from spike.Algo.BC import correctbaseline # Necessary for the baseline correction
 import spike.File.BrukerNMR as bk
+import spike.plugins.bcorr as bcorr
+from spike.Algo.BC import correctbaseline # Necessary for the baseline correction
 from spike.NPKData import as_cpx
 from spike.util.signal_tools import findnoiselevel
-import spike.plugins.bcorr as bcorr
+from spike.Algo.Linpredic import baselinerollrem
 
 import Bruker_Report
 
@@ -232,6 +233,7 @@ def findNuc(data):
     estimates spin name and Bo from acqus file stored in parameters
     restrict to spin 1/2
     """
+    from spike.v1 import Nucleus
     try:
         acq = data.params['acqu']
     except:
@@ -267,7 +269,11 @@ def FT1D(numb1, ppm_offset=0, autoph=True, ph0=0, ph1=0):
 
     proc = bk.read_param(numb1[:-3]+'pdata/1/procs')
     d = bk.Import_1D(numb1)
-    if (findnucleus(d) == '19F'):   # First 19F case
+    if findNuc(d) in ('19F','13C'):   # First deal with  baseline roll for wide band spectra
+        if d.axis1.specwidth > 20000:      # only if SW > 20kHz 
+            Nbsl = 10    # ~ twice the number of rolls
+            d = baselinerollrem(d, n=Nbsl)
+    if findNuc(d) == '19F':   # First 19F case
         if Config['MODUL_19F']:      # modulus ? easy ! (but sloppy)
             d.center().apod_em(Config['LB_19F'],1).zero_dsp(coeff=1.3).zf(2).ft_sim()
             d.modulus()
@@ -392,7 +398,7 @@ def process_1D(xarg):
 
     bkout = open( op.join(resdir, '1D', fidname+'_bucketlist.csv')  , 'w')
     #d.bucket1d(file=bkout)
-    if (findnucleus(d) == '19F'):
+    if (findNuc(d) == '19F'):
         d.bucket1d(file=bkout, zoom=Config['BCK_19F_LIMITS'], bsize=Config['BCK_19F_1D'], pp=Config['BCK_PP'], sk=Config['BCK_SK'])
     else:
         d.bucket1d(file=bkout, zoom=Config['BCK_1H_LIMITS'], bsize=Config['BCK_1H_1D'], pp=Config['BCK_PP'], sk=Config['BCK_SK'])
@@ -418,8 +424,21 @@ def process_2D(xarg):
     fiddir =  op.dirname(numb2)
     basedir, fidname = op.split(fiddir)
     base, manip =  op.split(basedir)
-    exptype =  bk.read_param(bk.find_acqu( fiddir ) ) ['$PULPROG']
-    exptype =  exptype[1:-1]  # removes the <...>
+    pulprog = bk.read_param(bk.find_acqu( fiddir ) ) ['$PULPROG']
+    exptype = pulprog[1:-1]  # removes the <...>
+    if 'cosy' in exptype:
+        exptype = 'COSY'
+    elif 'dipsi' in exptype or 'mlev' in exptype or 'tocsy' in exptype:
+        exptype = 'TOCSY'
+    elif 'hsqc' in exptype:
+        exptype = 'HSQC'
+    elif 'hmbc' in exptype:
+        exptype = 'HMBC'
+    elif 'ste' in exptype or 'led' in exptype:
+        exptype = "DOSY"
+    else:
+        exptype = 'UNKNOWN'
+    print ("=================================================\nExperiment detected as ", exptype)
 
     ppm_offset, ph0, ph1 = get_config(base, manip, fidname)
 
@@ -429,15 +448,13 @@ def process_2D(xarg):
     sanerank = Config['SANERANK']
 
     #1. If TOCSY  
-    if 'dipsi' in exptype:
-        print ("TOCSY")
-#        print exptype
-        if 'dipsi2ph' in exptype:
+    if exptype == "TOCSY":
+        if 'etgp' in pulprog :
             d.apod_sin(maxi=0.5, axis=2).zf(zf2=2).ft_sim()
             if sanerank != 0:
                 d.sane(rank=sanerank, axis=1)
             d.apod_sin(maxi=0.5, axis=1).zf(zf1=4).bk_ftF1().modulus().rem_ridge()
-        elif 'dipsi2etgpsi' in exptype:
+        else:
             d.apod_sin(maxi=0.5, axis=2).zf(zf2=2).ft_sim()
             if sanerank != 0:
                 d.sane(rank=sanerank, axis=1)
@@ -448,8 +465,7 @@ def process_2D(xarg):
             d = autozero(d)
 
     #2. If COSY DQF
-    elif 'cosy' in exptype:
-        print ("COSY DQF")
+    elif exptype == "COSY":
         d.apod_sin(maxi=0.5, axis=2).zf(zf2=2).ft_sim()
         if sanerank != 0:
             d.sane(rank=sanerank, axis=1)
@@ -459,9 +475,8 @@ def process_2D(xarg):
         if Config['TMS']:
             d = autozero(d)
     #3. If HSQC
-    elif 'hsqc' in exptype:
-        print ("HSQC")
-        if 'ml' in exptype:
+    elif exptype == "HSQC":
+        if 'ml' in pulprog:
             print ("TOCSY-HSQC")
         d.apod_sin(maxi=0.5, axis=2).zf(zf2=2).ft_sim()
         if sanerank != 0:
@@ -476,12 +491,9 @@ def process_2D(xarg):
             d = autozero(d, z1=(5,-5))
 
     #4. If HMBC
-    elif 'hmbc' in exptype:
-        print ("HMBC")
-        if 'hmbc' in exptype:
-            print ("HMBC")
+    elif exptype == "HMBC":
         d.apod_sin(maxi=0.5, axis=2).zf(zf2=2).ft_sim()
-        if 'et' in exptype:
+        if 'et' in pulprog:
             d.conv_n_p()
         if sanerank != 0:
             d.sane(rank=sanerank, axis=1)
@@ -492,7 +504,7 @@ def process_2D(xarg):
             d = autozero(d, z1=(5,-5))
 
     #5. If DOSY - Processed in process_DOSY
-    elif 'ste' in exptype or 'led' in exptype:
+    elif exptype == "DOSY":
         print ("DOSY")
         d = process_DOSY(numb2, ppm_offset, lazy=Config['DOSY_LAZY'])
         scale = 50.0
@@ -605,11 +617,11 @@ def analyze_2D(d, name, pplevel=10):
     BCK_13C_LIMITS = Config['BCK_13C_LIMITS']
     BCK_DOSY =  Config['BCK_DOSY']
     BCK_PP = Config['BCK_PP']
-    if name.find('cosy') != -1 or name.find('dipsi') != -1:
+    if name.find('COSY') != -1 or name.find('TOCSY') != -1:
         dd.bucket2d(file=bkout, zoom=(BCK_1H_LIMITS, BCK_1H_LIMITS), bsize=(BCK_1H_2D, BCK_1H_2D), pp=BCK_PP, sk=Config['BCK_SK'] )
-    elif name.find('hsqc') != -1 or name.find('hmbc') != -1:
+    elif name.find('HSQC') != -1 or name.find('HMBC') != -1:
         dd.bucket2d(file=bkout, zoom=( BCK_13C_LIMITS, BCK_1H_LIMITS), bsize=(BCK_13C_2D, BCK_1H_2D), pp=BCK_PP, sk=Config['BCK_SK'] )
-    elif name.find('ste') != -1 or name.find('led') != -1:
+    elif name.find('DOSY') != -1 :
         ldmin = np.log10(d.axis1.dmin)
         ldmax = np.log10(d.axis1.dmax)
         sw = ldmax-ldmin
