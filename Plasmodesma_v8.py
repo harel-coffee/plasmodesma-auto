@@ -17,6 +17,8 @@ v6.3 : added parallelization of 1D and 2D Processing    MAD
 v6.4 : corrected so that there might be no 1D or 2D to process    MAD
 v7.0 : code for the Faraday 2019 paper - adapted to server - added reading from zip 
 v7.1: Adapted to newer version of Spike, added 19F, changed user interface...
+v7.2: local version, not published
+v8.0 extension and clean-up (a little !) of the code
 
 This code is associated to the publication:
 
@@ -34,14 +36,11 @@ http://doi.org/10.1039/c8fd00242h
 code is deposited in https://github.com/delsuc/plasmodesma
 
 the prgm has been fully tested under
-python 2.7.12
-    with    numpy 1.9.3
-            scipy 0.17.0
-and python 3.5.2
-    with    numpy 1.11.1
-            scipy 0.18.1
+
+python 3.11
+    with    numpy 1.11.1 - 1.26.0
+            scipy 1.11.3 
 """
-from __future__ import print_function, division
 
 #---------------------------------------------------------------------------
 #1. Imports; From global to specific modules in descending order
@@ -77,7 +76,7 @@ import multiprocessing as mp
 POOL = None      # will be overwritten by main()
 import numpy as np
 import matplotlib.pyplot as plt
-VERSION = "7.2"
+VERSION = "8.0.1"
 
 print ("**********************************************************************************")
 print ("*                              PLASMODESMA program %3s                           *"%(VERSION,))
@@ -130,8 +129,8 @@ Config = {
 #---------------------------------------------------------------------------
 #3. Utilities
 
-def set_param(DIREC='.'):
-    "prgm parameters"
+def set_globalconfig(DIREC='.'):
+    "prgm global parameters - loaded in Config{} "
     global Config
     print("Current directory: ", os.path.realpath(os.getcwd()))
     print("Working directory: ", DIREC)
@@ -159,7 +158,7 @@ if __name__ == "__main__":
     parser.add_argument('-n', '--dry',  action='store_true', help="list parameters and do not run")
     args = parser.parse_args()
 
-    set_param(args.DIREC)
+    set_globalconfig(args.DIREC)
     Config['NPROC'] = args.Nproc
     print("params are:")
     #pprint.pprint(Config)
@@ -175,6 +174,7 @@ from spike.Algo.BC import correctbaseline # Necessary for the baseline correctio
 from spike.NPKData import as_cpx
 from spike.util.signal_tools import findnoiselevel
 from spike.Algo.Linpredic import baselinerollrem
+from spike.v1 import Nucleus
 
 import Bruker_Report
 
@@ -233,7 +233,6 @@ def findNuc(data):
     estimates spin name and Bo from acqus file stored in parameters
     restrict to spin 1/2
     """
-    from spike.v1 import Nucleus
     try:
         acq = data.params['acqu']
     except:
@@ -294,6 +293,7 @@ def FT1D(numb1, ppm_offset=0, autoph=True, ph0=0, ph1=0):
             d.phase( p0+ph0, p1+ph1 )   # Performs the stored phase correction
         else:
             d.bruker_corr().apmin()     # automatic phase correction
+            d.phase( ph0, ph1 )   # Performs the additional phase correction from parameters.json
     d.unit = 'ppm'
     d.axis1.offset += ppm_offset*d.axis1.frequency
 
@@ -345,33 +345,39 @@ def autozero(d, z1=(0.1,-0.1), z2=(0.1,-0.1),):
     del(d.peaks)
     return d
     
-def get_config(base, manip, fidname):
+def get_localparameters(expname):
     """
-    reads the parameters.cfg file that is located in the root of the processing
-    it contains parameters, one section per procno
-    [manip/1]
+    ( used to be get_config() ... and .cfg files)
+    reads the parameters.json file that is located in the root of the processing
+    it contains additional parameters applied only for the processing of this experiment
+    [manip/#expno]
     ppm_offset = 1.2
     ph0 = 30
-    ph1 -60
+    ph1 = -60
     return a tuples with the values
 
     missing values are set to zero
     no effect if the file is absent
     """ 
-    vals = [0,0,0]
-    configfile = op.join(base,"parameters.cfg")
-    if op.exists(configfile):
-        print ('reading parameters.cfg')
-        cp = ConfigParser.SafeConfigParser()
-        cp.read(configfile)
-        for i,p in enumerate(["ppm_offset", "ph0", "ph1"]):
+    fiddir =  op.dirname(expname)
+    basedir, fidname = op.split(fiddir)
+    base, manip =  op.split(basedir)
+    # print("base, manip, fidname, fiddir, expname")
+    # print(base, manip, fidname, fiddir, expname)
+    try:
+        with open(op.join(base,"parameters.json"),"r") as f:
             try:
-                vals[i] = cp.getfloat("%s/%s"%(manip,fidname),p)
-            except (ConfigParser.NoSectionError, ConfigParser.NoOptionError):
-                pass
-            else:
-                print(p,vals[i])
-    return tuple(vals)
+                localjson = json.load(f)
+            except:
+                raise Exception('Error in reading Configuration file %s'%(op.join(base,"parameters.json"),))
+    except IOError:
+        localjson = {} # no parameters in this file
+        print(f'####### in {base}/parameters.json - {manip}/{fidname}  No param')
+    try:
+        res = localjson[ f"{manip}/{fidname}" ]
+    except KeyError:
+        res = {}  #
+    return res
 
 #---------------------------------------------------------------------------
 #4. Main code
@@ -382,37 +388,49 @@ def process_1D(xarg):
     basedir, fidname = op.split(fiddir)
     base, manip =  op.split(basedir)
 
-    ppm_offset, ph0, ph1 = get_config(base, manip, fidname)
+    print (f"=================================================\n{manip}/{fidname} 1D\n")
+    LocParam = get_localparameters(exp)
+    ppm_offset = LocParam.get('ppm_offset',0)
+    ph0 = LocParam.get('ph0',0)
+    ph1 = LocParam.get('ph1',0)
 
     d = FT1D(exp, ppm_offset=ppm_offset, ph0=ph0, ph1=ph1)
     if Config['TMS']:
         d = autozero(d)
+    d.save(op.join( fiddir,"processed.gs1") )
+    
+    analyze_1D(d, name=op.join(resdir, '1D', fidname), pplevel=50)
+    return d
 
+def analyze_1D(d, name, pplevel=50):
+    "Computes peak and bucket lists and exports them as CSV files"
     noise = findnoiselevel( d.get_buffer() )
-    d.pp(50*noise)
+    d.pp(pplevel*noise)
     d.centroid()            # optimize the peaks
     
-    pkout = open( op.join(resdir, '1D', fidname+'_peaklist.csv')  , 'w') 
+    pkout = open( name+'_peaklist.csv' , 'w') 
     d.peaks.report(f=d.axis1.itop, file=pkout)
     pkout.close()
 
-    bkout = open( op.join(resdir, '1D', fidname+'_bucketlist.csv')  , 'w')
-    #d.bucket1d(file=bkout)
+    bkout = open( name+'_bucketlist.csv' , 'w')
+
     if (findNuc(d) == '19F'):
         d.bucket1d(file=bkout, zoom=Config['BCK_19F_LIMITS'], bsize=Config['BCK_19F_1D'], pp=Config['BCK_PP'], sk=Config['BCK_SK'])
     else:
         d.bucket1d(file=bkout, zoom=Config['BCK_1H_LIMITS'], bsize=Config['BCK_1H_1D'], pp=Config['BCK_PP'], sk=Config['BCK_SK'])
     bkout.close()
-    d.save(op.join( fiddir,"processed.gs1") )
     return d
 
-def plot_1D(d, exp, resdir ):
+def plot_1D(d, exp, resdir):
     fiddir =  op.dirname(exp)
     basedir, fidname = op.split(fiddir)
     base, manip =  op.split(basedir)
 
     d.unit = 'ppm'
-    d.display(label="%s/%s"%(manip,fidname))
+    try:
+        d.display(label=f"{manip}/{fidname} {d.comment}")
+    except AttributeError:
+        d.display(label=f"{manip}/{fidname}")
     plt.savefig( op.join(resdir, '1D', fidname+'.pdf') ) # Creates a PDF of the 1D spectrum without peaks
     d.display_peaks() # peaks.display(f=d.axis1.itop)
     plt.savefig( op.join(resdir, '1D', fidname+'_pp.pdf') ) # Creates a PDF of the 1D spectrum with peaks
@@ -438,9 +456,12 @@ def process_2D(xarg):
         exptype = "DOSY"
     else:
         exptype = 'UNKNOWN'
-    print ("=================================================\nExperiment detected as ", exptype)
+    print (f"=================================================\n{manip}/{fidname}\nExperiment detected as ", exptype)
 
-    ppm_offset, ph0, ph1 = get_config(base, manip, fidname)
+    LocParam = get_localparameters(numb2)
+    ppm_offset = LocParam.get('ppm_offset',0)
+    ph0 = LocParam.get('ph0',0)
+    ph1 = LocParam.get('ph1',0)
 
     d = bk.Import_2D(numb2)
     d.unit = 'ppm'
@@ -505,9 +526,11 @@ def process_2D(xarg):
 
     #5. If DOSY - Processed in process_DOSY
     elif exptype == "DOSY":
-        print ("DOSY")
         d = process_DOSY(numb2, ppm_offset, lazy=Config['DOSY_LAZY'])
         scale = 50.0
+    # else die
+    else:
+        raise ValueError("Unknown PULPROG in acqus")
 
     analyze_2D( d, name=op.join(resdir, '2D', exptype+'_'+fidname) )
     d.save(op.join(fiddir,"processed.gs2"))
@@ -521,7 +544,8 @@ def Dprocess_2D( numb2, resdir ):
     exptype =  bk.read_param(bk.find_acqu( fiddir ) ) ['$PULPROG']
     exptype =  exptype[1:-1]  # removes the <...>
 
-    ppm_offset, ph0, ph1 = get_config(base, manip, fidname)
+    LocParam = get_localparameters(numb2)
+    ppm_offset = LocParam.get('ppm_offset',0)
 
     d = bk.Import_2D(numb2)
     d.unit = 'ppm'
@@ -647,7 +671,7 @@ def process_sample(sample, resdir):
     l1D = glob( op.join(sample, "*", "fid") )
     if l1D != []:
         xarg = list( zip_longest(l1D, [resdir], fillvalue=resdir) )
-        print (xarg)
+        # print (xarg)
         if POOL is None:
             result = imap(process_1D, xarg)
         else:
@@ -663,13 +687,13 @@ def process_sample(sample, resdir):
     lDOSY = []
     for f in glob( op.join(sample, "*", "ser") ):
         fiddir =  op.dirname(f)
-        if op.exists( op.join(fiddir,'difflist') ):
+        if op.exists( op.join(fiddir,'difflist') ):  # DOSY should have their difflist
             lDOSY.append(f)
         else:
             l2D.append(f)
     if l2D != []:
         xarg = list( zip_longest(l2D, [resdir], fillvalue=resdir) )
-        print (xarg)
+        # print (xarg)
         if POOL is None:
             result2 = imap(process_2D, xarg)
         else:
@@ -677,7 +701,10 @@ def process_sample(sample, resdir):
         for i, r in enumerate(result2):
             d, scale = r
             print(d)
-            plot_2D(d, scale, l2D[i], resdir )
+            if d.dim == 2:
+                plot_2D(d, scale, l2D[i], resdir )
+            elif d.dim == 1:
+                plot_1D(d, l2D[i], resdir )
 
 # finally DOSYs internally //ized
     for dosy in lDOSY:
