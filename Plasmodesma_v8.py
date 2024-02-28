@@ -76,10 +76,11 @@ import multiprocessing as mp
 POOL = None      # will be overwritten by main()
 import numpy as np
 import matplotlib.pyplot as plt
-VERSION = "8.0.1"
+
+VERSION = "8.0.2"
 
 print ("**********************************************************************************")
-print ("*                              PLASMODESMA program %3s                           *"%(VERSION,))
+print ("*                              PLASMODESMA program %5s                         *"%(VERSION,))
 print ("*           - automatic advanced processing of NMR experiment series -           *")
 print ("*                                                                                *")
 print ("**********************************************************************************")
@@ -94,10 +95,11 @@ global Config
 Config = {
     'NPROC' : 1,            # The default number of processors for calculation, if  value >1 will activate multiprocessing mode
                             # for best results keep it below your actual number of cores ! (MKL and hyperthreading !).
-    'BC_ALGO' : 'Spline',   # baseline correction algo, either 'None', 'Spline' or 'Sterative'   
-    'BC_ITER' : 5,          # Used by iterative baseline Correction; It is advisable to use a larger number for iterating, e.g. 5
-    'BC_CHUNKSZ' : 1000,    # chunk size used by iterative baseline Correction
-    'BC_NPOINTS' : 8,       # number of pivot points used by spline baseline Correction
+    'BC_ALGO' : 'Spline',   # baseline correction algo, either 'None', 'Coord', 'Spline' or 'Iterative'   
+    'BC_ITER' : 5,          # Used by 'Iterative' baseline Correction; It is advisable to use a larger number for iterating, e.g. 5
+    'BC_CHUNKSZ' : 1000,    # chunk size used by 'Iterative' baseline Correction,
+    'BC_NPOINTS' : 8,       # number of pivot points used by automatic 'Spline' baseline Correction
+    'BC_COORDS' : [],       # coordinates of pivot points in ppm used by 'Coord' baseline Correction
     'TMS' : True,           # if true, TMS (or any 0 ppm reference) is supposed to be present and used for ppm calibration
     'LB_1H' : 1.0,          # exponential linebroadening in Hz used for 1D 1H 
     'LB_13C' : 3.0,         # exponential linebroadening in Hz used for 1D 13C
@@ -114,7 +116,7 @@ Config = {
     'BCK_13C_LIMITS' : [-10, 150],  # limits of zone to  bucket and display in 13C
     'BCK_13C_1D' : 0.03,    # bucket size for 1D 13C
     'BCK_13C_2D' : 1.0,     # bucket size for 2D 13C
-    'BCK_19F_LIMITS' : [-230, -50],  # limits of zone to  bucket and display in 19F
+    'BCK_19F_LIMITS' : [-220, -40],  # limits of zone to  bucket and display in 19F
     'BCK_19F_1D' : 0.1,    # bucket size for 1D 19F
     'BCK_19F_2D' : 1.0,     # bucket size for 2D 19F
     'BCK_DOSY' : 1.0,       # bucket size for vertical axis of DOSY experiments
@@ -125,6 +127,9 @@ Config = {
     'add2Dpar': [],
     'addDOSYpar': []
 }
+
+global RunConfig
+RunConfig = {} | Config        # update internal RunConfig
 
 #---------------------------------------------------------------------------
 #3. Utilities
@@ -153,16 +158,19 @@ def set_globalconfig(DIREC='.'):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('-D', '--Data', action='store', dest='DIREC', default=" .", help='DIRECTORY_with_NMR_experiments, default=.')
+    parser.add_argument('-D', '--Data', action='store', dest='DIREC', default=" .", help='DIRECTORY_with_NMR_experiments, default is "."')
     parser.add_argument('-N', action='store', dest='Nproc', default=Config['NPROC'], type=int, help='number of processors to use, default=%d'%Config['NPROC'])
-    parser.add_argument('-n', '--dry',  action='store_true', help="list parameters and do not run")
+    parser.add_argument('-n', '--dry',  action='store_true', help="list parameters, generate report.csv, but do not process")
+    parser.add_argument('-T', '--template',  action='store_true',
+                        help="Generate default config files templates (parameters.json RunConfig.json), implies --dry")
     args = parser.parse_args()
 
     set_globalconfig(args.DIREC)
     Config['NPROC'] = args.Nproc
+    RunConfig = {} | Config        # update internal RunConfig
     print("params are:")
-    #pprint.pprint(Config)
-    print(json.dumps(Config, indent=4))
+    #pprint.pprint(RunConfig)
+    print(json.dumps(RunConfig, indent=4))
 
 print ("Loading utilities ...")
 
@@ -250,12 +258,12 @@ def findNuc(data):
         if (dist<mindist):
             Spin = s
             mindist = dist
-    (_,  _, _, magnetogyricRatio, _, _) = Nucleus.table["1H"]
-    Bo = F1H *2* np.pi / (10* magnetogyricRatio)
+    # (_,  _, _, magnetogyricRatio, _, _) = Nucleus.table["1H"]
+    # Bo = F1H *2* np.pi / (10* magnetogyricRatio)
     # return(Spin,Bo)
     return Spin
    
-def FT1D(numb1, ppm_offset=0, autoph=True, ph0=0, ph1=0):
+def FT1D(numb1, autoph=True):
     "Performs FT and corrections of experiment 'numb1' and returns data"
     def phase_from_param():
         "read the proc parame file, and returns phase parameters ok for spike"
@@ -266,6 +274,9 @@ def FT1D(numb1, ppm_offset=0, autoph=True, ph0=0, ph1=0):
         #print (ph0, ph1)
         return (ph0, ph1+zero)
 
+    ph0 = RunConfig['ph0']
+    ph1 = RunConfig['ph1']
+
     proc = bk.read_param(numb1[:-3]+'pdata/1/procs')
     d = bk.Import_1D(numb1)
     if findNuc(d) in ('19F','13C'):   # First deal with  baseline roll for wide band spectra
@@ -273,21 +284,21 @@ def FT1D(numb1, ppm_offset=0, autoph=True, ph0=0, ph1=0):
             Nbsl = 10    # ~ twice the number of rolls
             d = baselinerollrem(d, n=Nbsl)
     if findNuc(d) == '19F':   # First 19F case
-        if Config['MODUL_19F']:      # modulus ? easy ! (but sloppy)
-            d.center().apod_em(Config['LB_19F'],1).zero_dsp(coeff=1.3).zf(2).ft_sim()
+        if RunConfig['MODUL_19F']:      # modulus ? easy ! (but sloppy)
+            d.center().apod_em(RunConfig['LB_19F'],1).zero_dsp(coeff=1.3).zf(2).ft_sim()
             d.modulus()
         else:
             if 'OPERA' in d.params['acqu']['$PULPROG']:    # OPERA acquisition is different
-                d.center().apod_em(Config['LB_19F'],1).zf(2).ft_sim()
+                d.center().apod_em(RunConfig['LB_19F'],1).zf(2).ft_sim()
                 d.bk_pk().apmin()
             else:   # phasing non-opera is tricky !
-                dd = d.copy().center().apod_em(Config['LB_19F'],1).zero_dsp(coeff=1.3).zf(2).ft_sim()   # work on a copy
+                dd = d.copy().center().apod_em(RunConfig['LB_19F'],1).zero_dsp(coeff=1.3).zf(2).ft_sim()   # work on a copy
                 dd.bk_pk()
                 dd.apmin()
                 p0,p1 = (dd.axis1.P0, dd.axis1.P1)    # copy apmin results
-                d.center().apod_em(Config['LB_19F'],1).zf(2).ft_sim().bk_pk().phase(p0,p1)
+                d.center().apod_em(RunConfig['LB_19F'],1).zf(2).ft_sim().bk_pk().phase(p0,p1)
     else:
-        d.center().apod_em(Config['LB_1H'],1).zf(2).ft_sim()
+        d.center().apod_em(RunConfig['LB_1H'],1).zf(2).ft_sim()
         if not autoph:
             p0,p1 = phase_from_param()
             d.phase( p0+ph0, p1+ph1 )   # Performs the stored phase correction
@@ -295,20 +306,29 @@ def FT1D(numb1, ppm_offset=0, autoph=True, ph0=0, ph1=0):
             d.bruker_corr().apmin()     # automatic phase correction
             d.phase( ph0, ph1 )   # Performs the additional phase correction from parameters.json
     d.unit = 'ppm'
-    d.axis1.offset += ppm_offset*d.axis1.frequency
+    d.axis1.offset += RunConfig['ppm_offset']*d.axis1.frequency
 
     spec = np.real( d.get_buffer() )
-    if Config['BC_ALGO'] == 'Iterative':
+    if RunConfig['BC_ALGO'] == 'Iterative':
         # the following is a bit convoluted baseline correction, 
-        bl = correctbaseline(spec, iterations=Config['BC_ITER'], nbchunks=d.size1//Config['BC_CHUNKSZ'])
+        bl = correctbaseline(spec, iterations=RunConfig['BC_ITER'], nbchunks=d.size1//RunConfig['BC_CHUNKSZ'])
         dd = d.copy()
         dd.set_buffer(bl)
         dd.unit = 'ppm'
         d.real()
         d -= dd # Equal to d=d-dd; Used instead of (spec-bl)
-    elif Config['BC_ALGO'] == 'Spline':
+    elif RunConfig['BC_ALGO'] == 'Coord':
+        d.real().set_unit('ppm')
+        BCcoors = RunConfig['BC_COORDS']
+        if len(BCcoors) <4:
+            D1.bcorr(method='linear', nsmooth=200, xpunits='current', xpoints=BCcoors)
+        else:
+            D1.bcorr(method='spline', nsmooth=200, xpunits='current', xpoints=BCcoors)
+    elif RunConfig['BC_ALGO'] == 'Spline':
         d.real()
-        d.bcorr(method='spline', xpoints=Config['BC_NPOINTS'],  nsmooth=3)
+        d.bcorr(method='spline', xpoints=RunConfig['BC_NPOINTS'],  nsmooth=3)
+    elif RunConfig['BC_ALGO'] != "None":
+        raise Exception("Wrong BC_ALGO value, use either 'None', 'Coord', 'Spline', or 'Iterative'") 
     return d
 
 def autozero(d, z1=(0.1,-0.1), z2=(0.1,-0.1),):
@@ -358,9 +378,13 @@ def get_localparameters(expname):
 
     missing values are set to zero
     no effect if the file is absent
-    """ 
-    fiddir =  op.dirname(expname)
-    basedir, fidname = op.split(fiddir)
+    """
+    global RunConfig
+    from pprint import pprint
+    from collections import defaultdict
+    # expname : Base/Manipe/Expno/fid
+    fiddir =  op.dirname(expname)            # Base/Manipe/Expno
+    basedir, fidname = op.split(fiddir)  # Base/Manipe Expno
     base, manip =  op.split(basedir)
     # print("base, manip, fidname, fiddir, expname")
     # print(base, manip, fidname, fiddir, expname)
@@ -377,6 +401,8 @@ def get_localparameters(expname):
         res = localjson[ f"{manip}/{fidname}" ]
     except KeyError:
         res = {}  #
+    RunConfig = defaultdict(float) | Config | res         # update internal RunConfig
+    pprint(res)
     return res
 
 #---------------------------------------------------------------------------
@@ -384,18 +410,16 @@ def get_localparameters(expname):
 def process_1D(xarg):
     "Performs all processing of exp, and produces the spectrum (with and without peaks) and the list files"
     exp, resdir = xarg
-    fiddir =  op.dirname(exp)
-    basedir, fidname = op.split(fiddir)
+    # exp : Base/Manipe/Expno/fid
+    fiddir =  op.dirname(exp)            # Base/Manipe/Expno
+    basedir, fidname = op.split(fiddir)  # Base/Manipe Expno
     base, manip =  op.split(basedir)
 
     print (f"=================================================\n{manip}/{fidname} 1D\n")
     LocParam = get_localparameters(exp)
-    ppm_offset = LocParam.get('ppm_offset',0)
-    ph0 = LocParam.get('ph0',0)
-    ph1 = LocParam.get('ph1',0)
 
-    d = FT1D(exp, ppm_offset=ppm_offset, ph0=ph0, ph1=ph1)
-    if Config['TMS']:
+    d = FT1D(exp)
+    if RunConfig['TMS']:
         d = autozero(d)
     d.save(op.join( fiddir,"processed.gs1") )
     
@@ -415,9 +439,9 @@ def analyze_1D(d, name, pplevel=50):
     bkout = open( name+'_bucketlist.csv' , 'w')
 
     if (findNuc(d) == '19F'):
-        d.bucket1d(file=bkout, zoom=Config['BCK_19F_LIMITS'], bsize=Config['BCK_19F_1D'], pp=Config['BCK_PP'], sk=Config['BCK_SK'])
+        d.bucket1d(file=bkout, zoom=RunConfig['BCK_19F_LIMITS'], bsize=RunConfig['BCK_19F_1D'], pp=RunConfig['BCK_PP'], sk=RunConfig['BCK_SK'])
     else:
-        d.bucket1d(file=bkout, zoom=Config['BCK_1H_LIMITS'], bsize=Config['BCK_1H_1D'], pp=Config['BCK_PP'], sk=Config['BCK_SK'])
+        d.bucket1d(file=bkout, zoom=RunConfig['BCK_1H_LIMITS'], bsize=RunConfig['BCK_1H_1D'], pp=RunConfig['BCK_PP'], sk=RunConfig['BCK_SK'])
     bkout.close()
     return d
 
@@ -432,8 +456,10 @@ def plot_1D(d, exp, resdir):
     except AttributeError:
         d.display(label=f"{manip}/{fidname}")
     plt.savefig( op.join(resdir, '1D', fidname+'.pdf') ) # Creates a PDF of the 1D spectrum without peaks
+    plt.savefig( op.join(resdir, '1D', fidname+'.png'), dpi=300 ) # and a PNG 
     d.display_peaks() # peaks.display(f=d.axis1.itop)
     plt.savefig( op.join(resdir, '1D', fidname+'_pp.pdf') ) # Creates a PDF of the 1D spectrum with peaks
+    plt.savefig( op.join(resdir, '1D', fidname+'_pp.png'), dpi=300 ) # and a PNG
     plt.close()
 
 def process_2D(xarg):
@@ -457,16 +483,18 @@ def process_2D(xarg):
     else:
         exptype = 'UNKNOWN'
     print (f"=================================================\n{manip}/{fidname}\nExperiment detected as ", exptype)
-
     LocParam = get_localparameters(numb2)
-    ppm_offset = LocParam.get('ppm_offset',0)
-    ph0 = LocParam.get('ph0',0)
-    ph1 = LocParam.get('ph1',0)
 
     d = bk.Import_2D(numb2)
+    NUS = d.params['acqu']['$FnTYPE']
+    if NUS != "0":
+        print("It seems this experiment is in NUS mode - NUS processing not implemented yet")
+        return None
+
+
     d.unit = 'ppm'
     scale = 10.0 
-    sanerank = Config['SANERANK']
+    sanerank = RunConfig['SANERANK']
 
     #1. If TOCSY  
     if exptype == "TOCSY":
@@ -481,8 +509,8 @@ def process_2D(xarg):
                 d.sane(rank=sanerank, axis=1)
             d.apod_sin(maxi=0.5, axis=1).zf(zf1=4).bk_ftF1().modulus().rem_ridge()
         scale = 50.0
-        d.axis2.offset += ppm_offset*d.axis2.frequency
-        if Config['TMS']:
+        d.axis2.offset += RunConfig['ppm_offset']*d.axis2.frequency
+        if RunConfig['TMS']:
             d = autozero(d)
 
     #2. If COSY DQF
@@ -492,8 +520,8 @@ def process_2D(xarg):
             d.sane(rank=sanerank, axis=1)
         d.apod_sin(maxi=0.5, axis=1).zf(zf1=4).bk_ftF1().modulus().rem_ridge()
         scale = 20.0
-        d.axis2.offset += ppm_offset*d.axis2.frequency
-        if Config['TMS']:
+        d.axis2.offset += RunConfig['ppm_offset']*d.axis2.frequency
+        if RunConfig['TMS']:
             d = autozero(d)
     #3. If HSQC
     elif exptype == "HSQC":
@@ -507,8 +535,8 @@ def process_2D(xarg):
                 print('size too small for sane')
         d.apod_sin(maxi=0.5, axis=1).zf(zf1=4).bk_ftF1().modulus().rem_ridge()  # ft_sh()
         scale = 10.0
-        d.axis2.offset += ppm_offset*d.axis2.frequency
-        if Config['TMS']:
+        d.axis2.offset += RunConfig['ppm_offset']*d.axis2.frequency
+        if RunConfig['TMS']:
             d = autozero(d, z1=(5,-5))
 
     #4. If HMBC
@@ -520,13 +548,13 @@ def process_2D(xarg):
             d.sane(rank=sanerank, axis=1)
         d.apod_sin(maxi=0.5, axis=1).zf(zf1=4).bk_ftF1().modulus().rem_ridge() # For Pharma MB1-X-X series
         scale = 10.0
-        d.axis2.offset += ppm_offset*d.axis2.frequency
-        if Config['TMS']:
+        d.axis2.offset += RunConfig['ppm_offset']*d.axis2.frequency
+        if RunConfig['TMS']:
             d = autozero(d, z1=(5,-5))
 
     #5. If DOSY - Processed in process_DOSY
     elif exptype == "DOSY":
-        d = process_DOSY(numb2, ppm_offset, lazy=Config['DOSY_LAZY'])
+        d = process_DOSY(numb2)
         scale = 50.0
     # else die
     else:
@@ -545,13 +573,12 @@ def Dprocess_2D( numb2, resdir ):
     exptype =  exptype[1:-1]  # removes the <...>
 
     LocParam = get_localparameters(numb2)
-    ppm_offset = LocParam.get('ppm_offset',0)
 
     d = bk.Import_2D(numb2)
     d.unit = 'ppm'
     if 'ste' in exptype or 'led' in exptype:
         print ("DOSY")
-        d = process_DOSY(numb2, ppm_offset, lazy=Config['DOSY_LAZY'])
+        d = process_DOSY(numb2)
         scale = 50.0
     else:
         raise Exception("This is not a DOSY: " + numb2)
@@ -575,10 +602,11 @@ def plot_2D(d, scale, numb2, resdir ):
     plt.close()
     return d
 
-def process_DOSY(fid, ppm_offset, lazy=False):
+def process_DOSY(fid):
     "Performs all processing of DOSY "
     import spike.plugins.NMR.PALMA as PALMA
     global POOL
+    lazy=RunConfig['DOSY_LAZY']
     d = PALMA.Import_DOSY(fid)
     print('PULPROG', d.params['acqu']['$PULPROG'],'   dfactor', d.axis1.dfactor)
     # process in F2
@@ -591,13 +619,13 @@ def process_DOSY(fid, ppm_offset, lazy=False):
         dd.adapt_size()
     else:
         d.chsize(sz2=min(16*1024,d.axis2.size))
-        d.apod_em(Config['LB_1H'],axis=2).ft_sim().bruker_corr()
+        d.apod_em(RunConfig['LB_1H'],axis=2).ft_sim().bruker_corr()
         # automatic phase correction
         r = d.row(2)
         r.apmin()
         d.phase(r.axis1.P0, r.axis1.P1, axis=2).real()
         # correct
-        d.axis2.offset += ppm_offset*d.axis2.frequency
+        d.axis2.offset += RunConfig['ppm_offset']*d.axis2.frequency
         # save
         fiddir =  op.dirname(fid)
         d.save(op.join(fiddir,"preprocessed.gs2"))
@@ -605,8 +633,8 @@ def process_DOSY(fid, ppm_offset, lazy=False):
         NN = 256
         d.prepare_palma(NN, 10.0, 10000.0)
         mppool = POOL
-        dd = d.do_palma(miniSNR=20, nbiter=Config['PALMA_ITER'], lamda=0.05, mppool=mppool )
-        if Config['TMS']:
+        dd = d.do_palma(miniSNR=20, nbiter=RunConfig['PALMA_ITER'], lamda=0.05, mppool=mppool )
+        if RunConfig['TMS']:
             r = autozero(r)  # calibrate only F2 axis !
             dd.axis2.offset = r.axis1.offset
     dd.axis2.currentunit = 'ppm'
@@ -635,16 +663,16 @@ def analyze_2D(d, name, pplevel=10):
     dd.report_peaks(file=pkout)
     pkout.close() 
     bkout = open( name+'_bucketlist.csv'  , 'w')
-    BCK_1H_2D = Config['BCK_1H_2D']
-    BCK_13C_2D = Config['BCK_13C_2D']
-    BCK_1H_LIMITS = Config['BCK_1H_LIMITS']
-    BCK_13C_LIMITS = Config['BCK_13C_LIMITS']
-    BCK_DOSY =  Config['BCK_DOSY']
-    BCK_PP = Config['BCK_PP']
+    BCK_1H_2D = RunConfig['BCK_1H_2D']
+    BCK_13C_2D = RunConfig['BCK_13C_2D']
+    BCK_1H_LIMITS = RunConfig['BCK_1H_LIMITS']
+    BCK_13C_LIMITS = RunConfig['BCK_13C_LIMITS']
+    BCK_DOSY =  RunConfig['BCK_DOSY']
+    BCK_PP = RunConfig['BCK_PP']
     if name.find('COSY') != -1 or name.find('TOCSY') != -1:
-        dd.bucket2d(file=bkout, zoom=(BCK_1H_LIMITS, BCK_1H_LIMITS), bsize=(BCK_1H_2D, BCK_1H_2D), pp=BCK_PP, sk=Config['BCK_SK'] )
+        dd.bucket2d(file=bkout, zoom=(BCK_1H_LIMITS, BCK_1H_LIMITS), bsize=(BCK_1H_2D, BCK_1H_2D), pp=BCK_PP, sk=RunConfig['BCK_SK'] )
     elif name.find('HSQC') != -1 or name.find('HMBC') != -1:
-        dd.bucket2d(file=bkout, zoom=( BCK_13C_LIMITS, BCK_1H_LIMITS), bsize=(BCK_13C_2D, BCK_1H_2D), pp=BCK_PP, sk=Config['BCK_SK'] )
+        dd.bucket2d(file=bkout, zoom=( BCK_13C_LIMITS, BCK_1H_LIMITS), bsize=(BCK_13C_2D, BCK_1H_2D), pp=BCK_PP, sk=RunConfig['BCK_SK'] )
     elif name.find('DOSY') != -1 :
         ldmin = np.log10(d.axis1.dmin)
         ldmax = np.log10(d.axis1.dmax)
@@ -661,7 +689,7 @@ def analyze_2D(d, name, pplevel=10):
 def process_sample(sample, resdir):
     "Redistributes NMR experiment to corresponding processing"
     global POOL
-    
+    print("%%%%%%%%%%%%%%%%", sample, resdir)
     sample_name = op.basename(sample)
     print (sample_name)
 # First 1D
@@ -699,12 +727,13 @@ def process_sample(sample, resdir):
         else:
             result2 = POOL.imap(process_2D, xarg)
         for i, r in enumerate(result2):
-            d, scale = r
-            print(d)
-            if d.dim == 2:
-                plot_2D(d, scale, l2D[i], resdir )
-            elif d.dim == 1:
-                plot_1D(d, l2D[i], resdir )
+            if r is not None:
+                d, scale = r
+                print(d)
+                if d.dim == 2:
+                    plot_2D(d, scale, l2D[i], resdir )
+                elif d.dim == 1:
+                    plot_1D(d, l2D[i], resdir )
 
 # finally DOSYs internally //ized
     for dosy in lDOSY:
@@ -745,8 +774,33 @@ def main(args):
     if len( glob( op.join(DIREC, '*') ) )==0:
         print( "WARNING\n\nDirectory %s is empty"%DIREC)
 
-    Bruker_Report.generate_report( DIREC, op.join(DIREC, 'report.csv'),
-            do_title=Config['TITLE'], addpar=Config['addpar'], add2Dpar=Config['add2Dpar'], addDOSYpar=Config['addDOSYpar'] )
+    Bruker_Report.generate_report( DIREC, op.join(DIREC, 'report.csv'), \
+            do_title=RunConfig['TITLE'], addpar=RunConfig['addpar'], add2Dpar=RunConfig['add2Dpar'], addDOSYpar=RunConfig['addDOSYpar'] )
+
+    if args.template:
+        # first RunConfig
+        with open(op.join(DIREC,'RunConfig_templ.json'), 'w') as F:
+            json.dump(Config, F, indent=4)
+        # then parameters
+        dic = {}      # build dic for file tree
+        for sp in glob( op.join(DIREC, '*') ): 
+            if not op.isdir(sp):
+                continue
+            sample = op.basename(sp)
+            print("#############", sample)
+            explist = []
+            for exp in glob( op.join(sp, "*", "fid") ):
+                expno =  op.basename(op.dirname(exp))
+                dic[f"{sample}/{expno}"] = {"remark":"1D experiment"}
+            for exp in glob( op.join(sp, "*", "ser") ):
+                expno =  op.dirname(exp)
+                dic[f"{sample}/{expno}"] = {"remark":"2D experiment"}
+        with open(op.join(DIREC,'parameters_templ.json'), 'w') as F:
+            json.dump(dic, F, indent=4)
+        args.dry = True
+    else:
+        with open(op.join(DIREC,'Config.dump'), 'w') as F:
+            json.dump(Config, F, indent=4)
 
     if args.dry:
         return
@@ -784,7 +838,10 @@ def main(args):
 
 if __name__ == "__main__":
 
-    print ("Processing ...")        
+    print ("Processing ...")
+
+    # import cProfile
+    # cProfile.run( 'main(args)', 'restats')
     main(args)
 
 
