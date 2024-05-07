@@ -77,7 +77,7 @@ POOL = None      # will be overwritten by main()
 import numpy as np
 import matplotlib.pyplot as plt
 
-VERSION = "8.0.2"
+VERSION = "8.0.3"
 
 print ("**********************************************************************************")
 print ("*                              PLASMODESMA program %5s                         *"%(VERSION,))
@@ -100,6 +100,7 @@ Config = {
     'BC_CHUNKSZ' : 1000,    # chunk size used by 'Iterative' baseline Correction,
     'BC_NPOINTS' : 8,       # number of pivot points used by automatic 'Spline' baseline Correction
     'BC_COORDS' : [],       # coordinates of pivot points in ppm used by 'Coord' baseline Correction
+    'ROLLREM_N' : 6,        # control a baseline flattening applied on fid for 13C and 19F - not used if 0
     'TMS' : True,           # if true, TMS (or any 0 ppm reference) is supposed to be present and used for ppm calibration
     'LB_1H' : 1.0,          # exponential linebroadening in Hz used for 1D 1H 
     'LB_13C' : 3.0,         # exponential linebroadening in Hz used for 1D 13C
@@ -117,19 +118,23 @@ Config = {
     'BCK_13C_1D' : 0.03,    # bucket size for 1D 13C
     'BCK_13C_2D' : 1.0,     # bucket size for 2D 13C
     'BCK_19F_LIMITS' : [-220, -40],  # limits of zone to  bucket and display in 19F
-    'BCK_19F_1D' : 0.1,    # bucket size for 1D 19F
+    'BCK_19F_1D' : 0.1,     # bucket size for 1D 19F
     'BCK_19F_2D' : 1.0,     # bucket size for 2D 19F
-    'BCK_DOSY' : 1.0,       # bucket size for vertical axis of DOSY experiments
-    'BCK_PP' : True,        # if True computes number of peaks per bucket (different from global peak-picking)
+    'BCK_DOSY' : 0.1,       # bucket size for vertical axis of DOSY experiments
+    'BCK_PP' : False,       # if True computes number of peaks per bucket (different from global peak-picking)
     'BCK_SK' : False,       # if True computes skewness and kurtosis over each bucket
     'TITLE': False,         # if true, the title file will be parsed for standard values (see documentation in Bruker_Report.py)
-    'addpar': [],           # additional parameters for Bruker_Report
+    'PNG': True,            # Figures of computed spectra are stored as PNG files
+    'PDF': False,           # Figures of computed spectra are stored as PDF files
+    'addpar': [],           # additional parameters for report.csv : eg ['D2', 'D12', 'P31']
     'add2Dpar': [],
     'addDOSYpar': []
 }
 
 global RunConfig
-RunConfig = {} | Config        # update internal RunConfig
+# RunConfig = {} | Config        # update internal RunConfig
+RunConfig = {}
+RunConfig.update(Config)        # update internal RunConfig
 
 #---------------------------------------------------------------------------
 #3. Utilities
@@ -149,10 +154,9 @@ def set_globalconfig(DIREC='.'):
         print('*** WARNING - no RunConfig.json file found - using default configuration')
     else:  # if no error
         for k in config.keys():
-            if k in Config.keys():
-                Config[k] = config[k]
-            else:
-                print ("*** %s entry in RunConfig.json  is ignored - wrong entry"%k)
+            if k not in Config.keys():
+                print ("*** WARNING %s entry in RunConfig.json is not a standard entry"%k)
+            Config[k] = config[k]
     #print('configuration:\n',Config)
 
 if __name__ == "__main__":
@@ -167,7 +171,9 @@ if __name__ == "__main__":
 
     set_globalconfig(args.DIREC)
     Config['NPROC'] = args.Nproc
-    RunConfig = {} | Config        # update internal RunConfig
+    #RunConfig = {} | Config        # update internal RunConfig
+    RunConfig = {}
+    RunConfig.update(Config)
     print("params are:")
     #pprint.pprint(RunConfig)
     print(json.dumps(RunConfig, indent=4))
@@ -277,27 +283,49 @@ def FT1D(numb1, autoph=True):
     ph0 = RunConfig['ph0']
     ph1 = RunConfig['ph1']
 
-    proc = bk.read_param(numb1[:-3]+'pdata/1/procs')
-    d = bk.Import_1D(numb1)
-    if findNuc(d) in ('19F','13C'):   # First deal with  baseline roll for wide band spectra
+    if numb1.endswith('fid'):
+        d = bk.Import_1D(numb1)
+    elif numb1.endswith('.gf1'):
+        d = npkd.NMRData(name=numb1)
+        acqu = bk.read_param( op.join(op.dirname(numb1),'acqus') )
+        proc = bk.read_param( op.join(op.dirname(numb1),'pdata','1','procs') )
+        d.axis1.zerotime = bk.zerotime(acqu)
+        d.params = {"acqu": acqu, "proc": proc}   # add the parameters to the data-set
+    else:
+        print(f"**** WARNING, {numb1} file format unknow")
+        raise Exception(f"**** WARNING, {numb1} file format unknow")
+
+#    proc = d.params['procs']
+
+    if findNuc(d) in ('13C'):   # First deal with  baseline roll for wide band spectra
+        print("Experiment detected as 1D 13D")
         if d.axis1.specwidth > 20000:      # only if SW > 20kHz 
-            Nbsl = 10    # ~ twice the number of rolls
-            d = baselinerollrem(d, n=Nbsl)
+            d.center()
+            if RunConfig['ROLLREM_N']>0:
+                d = baselinerollrem(d, n=RunConfig['ROLLREM_N'])
+            d.apod_em(RunConfig['LB_13C'],1).zf(2).ft_sim()
     if findNuc(d) == '19F':   # First 19F case
         if RunConfig['MODUL_19F']:      # modulus ? easy ! (but sloppy)
+            print("Experiment detected as 1D 19F Modulus")
             d.center().apod_em(RunConfig['LB_19F'],1).zero_dsp(coeff=1.3).zf(2).ft_sim()
             d.modulus()
         else:
             if 'OPERA' in d.params['acqu']['$PULPROG']:    # OPERA acquisition is different
-                d.center().apod_em(RunConfig['LB_19F'],1).zf(2).ft_sim()
+                print("Experiment detected as 1D 19F OPERA")
+                d.center()
+                if RunConfig['ROLLREM_N']>0:
+                    d = baselinerollrem(d, n=RunConfig['ROLLREM_N'])
+                d.apod_em(RunConfig['LB_19F'],1).zf(2).ft_sim()
                 d.bk_pk().apmin()
             else:   # phasing non-opera is tricky !
+                print("Experiment detected as 1D 19F")
                 dd = d.copy().center().apod_em(RunConfig['LB_19F'],1).zero_dsp(coeff=1.3).zf(2).ft_sim()   # work on a copy
                 dd.bk_pk()
                 dd.apmin()
                 p0,p1 = (dd.axis1.P0, dd.axis1.P1)    # copy apmin results
                 d.center().apod_em(RunConfig['LB_19F'],1).zf(2).ft_sim().bk_pk().phase(p0,p1)
     else:
+        print("Experiment detected as 1H")
         d.center().apod_em(RunConfig['LB_1H'],1).zf(2).ft_sim()
         if not autoph:
             p0,p1 = phase_from_param()
@@ -321,9 +349,9 @@ def FT1D(numb1, autoph=True):
         d.real().set_unit('ppm')
         BCcoors = RunConfig['BC_COORDS']
         if len(BCcoors) <4:
-            D1.bcorr(method='linear', nsmooth=200, xpunits='current', xpoints=BCcoors)
+            d.bcorr(method='linear', nsmooth=200, xpunits='current', xpoints=BCcoors)
         else:
-            D1.bcorr(method='spline', nsmooth=200, xpunits='current', xpoints=BCcoors)
+            d.bcorr(method='spline', nsmooth=200, xpunits='current', xpoints=BCcoors)
     elif RunConfig['BC_ALGO'] == 'Spline':
         d.real()
         d.bcorr(method='spline', xpoints=RunConfig['BC_NPOINTS'],  nsmooth=3)
@@ -400,8 +428,11 @@ def get_localparameters(expname):
     try:
         res = localjson[ f"{manip}/{fidname}" ]
     except KeyError:
-        res = {}  #
-    RunConfig = defaultdict(float) | Config | res         # update internal RunConfig
+        res = {}      #
+    # RunConfig = defaultdict(float) | Config | res         # update internal RunConfig
+    RunConfig = defaultdict(float)
+    RunConfig.update(Config)
+    RunConfig.update(res)
     pprint(res)
     return res
 
@@ -455,11 +486,15 @@ def plot_1D(d, exp, resdir):
         d.display(label=f"{manip}/{fidname} {d.comment}")
     except AttributeError:
         d.display(label=f"{manip}/{fidname}")
-    plt.savefig( op.join(resdir, '1D', fidname+'.pdf') ) # Creates a PDF of the 1D spectrum without peaks
-    plt.savefig( op.join(resdir, '1D', fidname+'.png'), dpi=300 ) # and a PNG 
+    if RunConfig['PDF']:
+	    plt.savefig( op.join(resdir, '1D', fidname+'.pdf') ) # Creates a PDF of the 1D spectrum without peaks
+    if RunConfig['PNG']:
+	    plt.savefig( op.join(resdir, '1D', fidname+'.png'), dpi=300 ) # and a PNG 
     d.display_peaks() # peaks.display(f=d.axis1.itop)
-    plt.savefig( op.join(resdir, '1D', fidname+'_pp.pdf') ) # Creates a PDF of the 1D spectrum with peaks
-    plt.savefig( op.join(resdir, '1D', fidname+'_pp.png'), dpi=300 ) # and a PNG
+    if RunConfig['PDF']:
+	    plt.savefig( op.join(resdir, '1D', fidname+'_pp.pdf') ) # Creates a PDF of the 1D spectrum with peaks
+    if RunConfig['PNG']:
+	    plt.savefig( op.join(resdir, '1D', fidname+'_pp.png'), dpi=300 ) # and a PNG
     plt.close()
 
 def process_2D(xarg):
@@ -553,7 +588,7 @@ def process_2D(xarg):
             d = autozero(d, z1=(5,-5))
 
     #5. If DOSY - Processed in process_DOSY
-    elif exptype == "DOSY":
+    elif exptype == "DOSY":   # Should not happen, as DOSY are processed independtly
         d = process_DOSY(numb2)
         scale = 50.0
     # else die
@@ -583,7 +618,7 @@ def Dprocess_2D( numb2, resdir ):
     else:
         raise Exception("This is not a DOSY: " + numb2)
 
-    dd = analyze_2D( d, name=op.join(resdir, '2D', exptype+'_'+fidname) )
+    dd = analyze_2D( d, name=op.join(resdir, '2D', 'DOSY_'+fidname) )
     d.save(op.join(fiddir,"processed.gs2"))
     return dd, scale
 
@@ -596,9 +631,15 @@ def plot_2D(d, scale, numb2, resdir ):
     exptype =  exptype[1:-1]  # removes the <...>
 
     d.display(scale="auto", autoscalethresh=10) #scale)
-    plt.savefig( op.join(resdir, '2D', exptype+'_'+fidname+'.pdf') ) # Creates a PDF of the 2D spectrum without peaks
+    if RunConfig['PDF']:
+	    plt.savefig( op.join(resdir, '2D', exptype+'_'+fidname+'.pdf') ) # Creates a PDF of the 2D spectrum without peaks
+    if RunConfig['PNG']:
+	    plt.savefig( op.join(resdir, '2D', exptype+'_'+fidname+'.png') ) # Creates a png of the 2D spectrum without peaks
     d.display_peaks(color="g")
-    plt.savefig( op.join(resdir, '2D', exptype+'_'+fidname+'_pp.pdf') ) # Creates a PDF of the 2D spectrum with peaks
+    if RunConfig['PDF']:
+	    plt.savefig( op.join(resdir, '2D', exptype+'_'+fidname+'_pp.pdf') ) # Creates a PDF of the 2D spectrum with peaks
+    if RunConfig['PNG']:
+	    plt.savefig( op.join(resdir, '2D', exptype+'_'+fidname+'_pp.png') ) # Creates a png of the 2D spectrum with peaks
     plt.close()
     return d
 
@@ -678,8 +719,8 @@ def analyze_2D(d, name, pplevel=10):
         ldmax = np.log10(d.axis1.dmax)
         sw = ldmax-ldmin
         dd.buffer[:,:] = dd.buffer[::-1,:]  # return axis1 
-        dd.axis1 = NMRAxis(specwidth=100*sw, offset=100*ldmin, frequency = 100.0, itype = 0)     # faking a 100MHz where ppm == log(D)
-        dd.bucket2d(file=bkout, zoom=( (ldmin, ldmax) , BCK_1H_LIMITS), bsize=(BCK_DOSY, BCK_1H_2D), pp=BCK_PP, sk=Config['BCK_SK'] ) #original parameters
+        dd.axis1 = NMRAxis(size=dd.size1, specwidth=100*sw, offset=100*ldmin, frequency = 100.0, itype = 0)     # faking a 100MHz where ppm == log(D)
+        dd.bucket2d(file=bkout, zoom=( (ldmin, ldmax) , BCK_1H_LIMITS), bsize=(BCK_DOSY, BCK_1H_2D), pp=BCK_PP, sk=RunConfig['BCK_SK'] ) #original parameters
     else:
         print ("*** Name not found!")
     bkout.close()
@@ -696,7 +737,9 @@ def process_sample(sample, resdir):
 #    for exp in glob( op.join(sample, "*/fid") ): # For 1D processing
 #        print (exp)
 #		 process_1D(exp, resdir)
-    l1D = glob( op.join(sample, "*", "fid") )
+    lfid = glob( op.join(sample, "*", "fid") )
+    lgf1 = glob( op.join(sample, "*", "*.gf1") )
+    l1D = lfid + lgf1
     if l1D != []:
         xarg = list( zip_longest(l1D, [resdir], fillvalue=resdir) )
         # print (xarg)
@@ -783,24 +826,34 @@ def main(args):
             json.dump(Config, F, indent=4)
         # then parameters
         dic = {}      # build dic for file tree
-        for sp in glob( op.join(DIREC, '*') ): 
+        for sp in sorted(glob( op.join(DIREC, '*') )): 
             if not op.isdir(sp):
                 continue
             sample = op.basename(sp)
             print("#############", sample)
             explist = []
-            for exp in glob( op.join(sp, "*", "fid") ):
+            for exp in sorted(glob( op.join(sp, "*", "fid")) ):
+                expno =  op.basename(op.dirname(exp))
+                dic[f"{sample}/{expno}"] = {"remark":"1D experiment"}
+            for exp in sorted(glob( op.join(sp, "*", "*.gf1")) ):
                 expno =  op.basename(op.dirname(exp))
                 dic[f"{sample}/{expno}"] = {"remark":"1D experiment"}
             for exp in glob( op.join(sp, "*", "ser") ):
-                expno =  op.dirname(exp)
+                expno =  op.basename(op.dirname(exp))
                 dic[f"{sample}/{expno}"] = {"remark":"2D experiment"}
         with open(op.join(DIREC,'parameters_templ.json'), 'w') as F:
             json.dump(dic, F, indent=4)
         args.dry = True
-    else:
-        with open(op.join(DIREC,'Config.dump'), 'w') as F:
-            json.dump(Config, F, indent=4)
+
+    # test left overs
+    if op.exists(op.join(DIREC, 'Results')):       # leftovers...
+        print("""
+Results from a previous run are present, STOPPING NOW...
+delete or move to a safe place the folder "Results" located in %s"""%(DIREC))
+        return
+
+    with open(op.join(DIREC,'Config.dump'), 'w') as F:
+        json.dump(Config, F, indent=4)
 
     if args.dry:
         return
@@ -818,9 +871,6 @@ def main(args):
         if not op.isdir(sp):
             # print("alien files")
             continue
-        if op.basename(sp) == 'Results': # leftovers...
-            print("Results from a previous run is present, stopping...")
-            break
         if  op.basename(sp)  == '__pycache__':  # python internal
             continue
         # ok, go on

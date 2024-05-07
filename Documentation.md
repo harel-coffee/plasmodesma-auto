@@ -141,13 +141,7 @@ Documented list of possible entries - given here with the default values.
     'BC_CHUNKSZ' : 1000,    # chunk size used by 'Iterative' baseline Correction,
     'BC_NPOINTS' : 8,       # number of pivot points used by automatic 'Spline' baseline Correction
     'BC_COORDS' : [],       # coordinates of pivot points in ppm used by 'Coord' baseline Correction
-    'TMS' : True,           # if true, TMS (or any ppm reference) is supposed to be present and used for ppm calibration
-                            # should a rather isolated singlet
-    'TMS_VALUE' : 0.0,      # the reference value used if TMS is true - not implemented yet
-    'TMS_VALUE_X' : 0.0,    # the reference value used for non proton (13C or 19F) if TMS is true  
-    'TMS_WINDOW' : 0.1,     # the reference signal is searched in a -TMS_WINDOW ... +TMS_WINDOW window, in ppm
-                            # value for 1H, multiplied by 20 in 19F and 13C
-    'AUTOPHASE':True,        # 
+    'TMS' : True,           # if true, TMS (or any 0 ppm reference) is supposed to be present and used for ppm calibration
     'LB_1H' : 1.0,          # exponential linebroadening in Hz used for 1D 1H 
     'LB_13C' : 3.0,         # exponential linebroadening in Hz used for 1D 13C
     'LB_19F' : 4.0,         # exponential linebroadening in Hz used for 1D 19F
@@ -166,11 +160,13 @@ Documented list of possible entries - given here with the default values.
     'BCK_19F_LIMITS' : [-220, -40],  # limits of zone to  bucket and display in 19F
     'BCK_19F_1D' : 0.1,    # bucket size for 1D 19F
     'BCK_19F_2D' : 1.0,     # bucket size for 2D 19F
-    'BCK_DOSY' : 1.0,       # bucket size for vertical axis of DOSY experiments
-    'BCK_PP' : True,        # if True computes number of peaks per bucket (different from global peak-picking)
+    'BCK_DOSY' : 0.1,       # bucket size for vertical axis of DOSY experiments
+    'BCK_PP' : False,        # if True computes number of peaks per bucket (different from global peak-picking)
     'BCK_SK' : False,       # if True computes skewness and kurtosis over each bucket
     'TITLE': False,         # if true, the title file will be parsed for standard values (see documentation in Bruker_Report.py)
-    'addpar': [],           # additional parameters for Bruker_Report
+    'PNG': True,            # Figures of computed spectra are stored as PNG files
+    'PDF': False,            # Figures of computed spectra are stored as PDF files
+    'addpar': [],           # additional parameters for report.csv : eg ['D2', 'D12', 'P31']
     'add2Dpar': [],
     'addDOSYpar': []
 }
